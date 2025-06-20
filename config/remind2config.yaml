@@ -49,6 +49,15 @@ enable_flexible_EVs:
     1: false
     2: true
 
+enable_heating:
+  remind_switch: c32_pypsa_cfg_heating
+  overwrite_pypsa: remind_coupling.sector_coupling.heating.enable
+  switch_mapping:
+    0: false
+    1: true
+
+# TODO: enable_flexible_heating
+
 enable_perturbed_scenarios:
   remind_switch: c32_pypsa_cfg_perturb
   overwrite_pypsa: remind_coupling.solve_perturbed_network.enable
