@@ -20,10 +20,10 @@ if __name__ == "__main__":
 
         snakemake = mock_snakemake(
             "import_REMIND_load",
-            scenario="PyPSA_PkBudg1000_DEU_rm350_pypsa202504_EV_heatingExport_2025-06-20_14.49.59",
+            scenario="TEST",
             iteration="1",
-            year="2030",
-            configfiles="resources/PyPSA_PkBudg1000_DEU_rm350_pypsa202504_EV_heatingExport_2025-06-20_14.49.59/i1/config.remind_scenario.yaml",
+            year="2050",
+            # configfiles="resources/PyPSA_PkBudg1000_DEU_rm350_pypsa202504_EV_heatingExport_2025-06-20_14.49.59/i1/config.remind_scenario.yaml",
         )
 
     configure_logging(snakemake)
@@ -36,30 +36,29 @@ if __name__ == "__main__":
     demand_sector = read_remind_data(
         snakemake.input["remind_data"],
         "p32_load_sector",
-        rename_columns={
-            "ttot": "year",
-            "all_regi": "region",
-            "loadPy32": "sector"
-        },
+        rename_columns={"ttot": "year", "all_regi": "region", "loadPy32": "sector"},
     ).query("year == @snakemake.wildcards.year")
     demand_sector["value"] *= 1e6 * 8760  # Convert from TWa to MWh
-    
+
     # Add sectoral loads to AC if sector coupling is not enabled
     sc_settings = snakemake.params["sector_coupling"]
 
     if not sc_settings["EVs"]["enable"]:
-        demand_sector.loc[demand_sector["sector"] == "AC", "value"] += demand_sector.loc[
-            demand_sector["sector"] == "EVs", "value"
-        ].values[0]
+        demand_sector.loc[
+            demand_sector["sector"] == "AC", "value"
+        ] += demand_sector.loc[demand_sector["sector"] == "EVs", "value"].values[0]
         demand_sector.query("sector != 'EVs'", inplace=True)
-        
+
     if not sc_settings["heating"]["enable"]:
-        demand_sector["AC"] += demand_sector["heatpump"] + demand_sector["resistive"]
+        demand_sector.loc[demand_sector["sector"] == "AC", "value"] += (
+            demand_sector.loc[demand_sector["sector"] == "heatpump", "value"]
+            + demand_sector.loc[demand_sector["sector"] == "resistive", "value"]
+        )
         demand_sector.query(
             "sector not in ['heatpump', 'resistive']",
             inplace=True,
         )
-        
+
     # If any sectoral load is negative set to zero and write warning mentioning the sector
     if (demand_sector["value"] < 0).any():
         negative_sectors = demand_sector.query("value < 0")["sector"].unique()
@@ -97,8 +96,9 @@ if __name__ == "__main__":
 
     # Factor by which PyPSA-EUR loads have to be scaled to match REMIND-EU demand
     load_scaling_factor = (
-        (demand_sector.query("sector == 'AC'").value.values[0] / regional_load)
-        .rename("load_scaling_factor")
+        (demand_sector.query("sector == 'AC'").value.values[0] / regional_load).rename(
+            "load_scaling_factor"
+        )
     ).fillna(0)
     load_scaling_factor = region_mapping.join(
         load_scaling_factor,

@@ -29,6 +29,10 @@ remind_coupling:
       # per_node: Add addditional hydrogen load to the existing hydrogen bus at each node, no spatial flexibility
       type: per_node  # Either "central_bus" or "per_node"
       buffer_max_hours: 168  # in hours, currently only applies to "central_bus"
+      hydrogen_underground_storage_locations:
+        # - onshore  # more than 50 km from sea
+        - nearshore    # within 50 km of sea
+        # - offshore
     # Electric vehicles based on default PyPSA-Eur implementation
     EVs:
       enable: false

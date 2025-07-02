@@ -259,6 +259,11 @@ rule download_and_prepare:
         expand(
             rules.build_cop_profiles_REMIND.output,
             clusters=config["scenario"]["clusters"]
+        ),
+        # Input data for hydrogen storage
+        expand(
+            "resources/salt_cavern_potentials_s_{clusters}.csv",
+            clusters=config["scenario"]["clusters"]
         )
 
 # This part contains all rules, which get data from REMIND between iterations.

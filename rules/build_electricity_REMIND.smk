@@ -706,6 +706,8 @@ rule add_electricity_REMIND:
         ),
         load=resources("electricity_demand_base_s.nc"),
         busmap=resources("busmap_base_s_{clusters}.csv"),
+        # Hydrogen salt cavern potential input file
+        h2_cavern=resources("salt_cavern_potentials_s_{clusters}.csv"),
         # EV input files
         transport_demand=resources("transport_demand_s_{clusters}.csv"),
         transport_data=resources("transport_data_s_{clusters}.csv"),

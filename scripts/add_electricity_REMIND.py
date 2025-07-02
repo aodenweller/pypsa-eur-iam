@@ -1119,6 +1119,8 @@ def attach_stores(
     n: pypsa.Network,
     costs: pd.DataFrame,
     extendable_carriers: dict,
+    h2_cavern_file: str,
+    cavern_types: list,
 ):
     """
     Attach stores to the network.
@@ -1131,6 +1133,10 @@ def attach_stores(
         DataFrame containing the cost data.
     extendable_carriers : dict
         Dictionary of extendable energy carriers.
+    h2_cavern_file : str
+        Path to CSV file containing hydrogen cavern storage potentials
+    cavern_types: list
+        List of cavern types to consider for hydrogen storage.
     """
     carriers = extendable_carriers["Store"]
 
@@ -1138,17 +1144,52 @@ def attach_stores(
 
     buses_i = n.buses.index
 
+    # Adapted from add_storage_and_grids in prepare_sector_network.py
     if "H2" in carriers:
         h2_buses_i = n.add("Bus", buses_i + " H2", carrier="H2", location=buses_i)
 
+        # Get H2 cavern potential
+        h2_caverns = pd.read_csv(h2_cavern_file, index_col=0)
+
+        if not h2_caverns.empty and set(cavern_types).intersection(h2_caverns.columns):
+            h2_caverns = h2_caverns[cavern_types].sum(axis=1)
+
+            # only use sites with at least 2 TWh potential
+            h2_caverns = h2_caverns[h2_caverns > 2]
+
+            # convert TWh to MWh
+            h2_caverns = h2_caverns * 1e6
+
+            # clip at 1000 TWh for one location
+            h2_caverns.clip(upper=1e9, inplace=True)
+
+            logger.info("Add hydrogen underground storage")
+
+            h2_capital_cost = costs.at["hydrogen storage underground", "capital_cost"]
+
+            n.add(
+                "Store",
+                h2_caverns.index + " H2",
+                bus=h2_caverns.index + " H2",
+                e_nom_extendable=True,
+                e_nom_max=h2_caverns.values,
+                e_cyclic=True,
+                carrier="H2",
+                capital_cost=h2_capital_cost,
+            )
+
+        # hydrogen stored overground (where not already underground)
+        nodes_overground = h2_caverns.index.symmetric_difference(buses_i)
+
         n.add(
             "Store",
-            h2_buses_i,
-            bus=h2_buses_i,
-            carrier="H2",
+            nodes_overground + " H2",
+            bus=nodes_overground + " H2",
             e_nom_extendable=True,
             e_cyclic=True,
-            capital_cost=costs.at["hydrogen storage underground", "capital_cost"],
+            carrier="H2",
+            # TODO: Temporary hack: Tank storage is roughly 50x more expensive than underground storage
+            capital_cost=50 * h2_capital_cost,
         )
 
         n.add(
@@ -1530,7 +1571,7 @@ def attach_hydrogen_demand_central_bus(
         n.add(
             "Load",
             name=f"{row['region']} H2 demand REMIND",
-            carrier = "H2",
+            carrier="H2",
             bus=f"{row['region']} H2 demand",
             p_set=row["value"] / 8760,
         )
@@ -1641,7 +1682,7 @@ def attach_hydrogen_demand_per_node(
             n.add(
                 "Load",
                 name=f"{bus} demand REMIND",
-                carrier = "H2",
+                carrier="H2",
                 bus=bus,
                 p_set=h2_demand_region * weights[bus] / 8760,
             )
@@ -1652,9 +1693,7 @@ def attach_hydrogen_demand_per_node(
 def add_EVs_REMIND(n, options_ev):
 
     # Read in electricity demand for EVs
-    ev_load = pd.read_csv(
-        snakemake.input.sectoral_load
-    )
+    ev_load = pd.read_csv(snakemake.input.sectoral_load)
     ev_load = ev_load[ev_load["sector"] == "EVs"]
 
     # Read in transport demand in units driven km [100 km]
@@ -1766,6 +1805,7 @@ def cycling_shift(df, steps=1):
     df.values[:] = df.reindex(index=new_index).values
     return df
 
+
 # TODO: Adjust for multiple regions
 def add_heat_REMIND(
     n: pypsa.Network,
@@ -1782,42 +1822,51 @@ def add_heat_REMIND(
     logger.info("Add heat sector")
 
     # Get heat demand of residential and services
-    heat_demand_total = xr.open_dataset(hourly_heat_demand_total_file).to_dataframe().unstack(level=1)
-    heat_demand = heat_demand_total["residential space"] + heat_demand_total["services space"]
+    heat_demand_total = (
+        xr.open_dataset(hourly_heat_demand_total_file).to_dataframe().unstack(level=1)
+    )
+    heat_demand = (
+        heat_demand_total["residential space"] + heat_demand_total["services space"]
+    )
 
     # Get cop profile for heat pumps
     cop = xr.open_dataarray(cop_profiles_file)
-    
+
     # Select any of the profiles
     cop_heat_pump = (
         cop.sel(heat_system="rural", heat_source="air")
         .to_pandas()
         .reindex(index=n.snapshots)
     )
-    
+
     # Calculate electricity demand for heat pumps
     elec_hp_profile = heat_demand / cop_heat_pump
-    
+
     # Get electricity for heat pumps from REMIND
-    elec_heat_pump_REMIND = pd.read_csv(
-        snakemake.input.sectoral_load
-    ).query("sector == 'heatpump'")
-    
+    elec_heat_pump_REMIND = pd.read_csv(snakemake.input.sectoral_load).query(
+        "sector == 'heatpump'"
+    )
+
     # Scale elec_hp_demand such that the sum corresponds to the total electricity demand for heat pumps from REMIND
-    elec_hp_profile_REMIND = elec_hp_profile * (elec_heat_pump_REMIND.value / elec_hp_profile.sum().sum()).values[0]
-     
+    elec_hp_profile_REMIND = (
+        elec_hp_profile
+        * (elec_heat_pump_REMIND.value / elec_hp_profile.sum().sum()).values[0]
+    )
+
     # Get electricity for resistive heating from REMIND
-    elec_resistive_REMIND = pd.read_csv(
-        snakemake.input.sectoral_load
-    ).query("sector == 'resistive'")
-    
+    elec_resistive_REMIND = pd.read_csv(snakemake.input.sectoral_load).query(
+        "sector == 'resistive'"
+    )
+
     # Resistive heating is independant of the outside temperature, therefore scale heat_demand profile
-    elec_resistive_profile_REMIND = heat_demand * (elec_resistive_REMIND.value / heat_demand.sum().sum()).values[0]
-    
+    elec_resistive_profile_REMIND = (
+        heat_demand * (elec_resistive_REMIND.value / heat_demand.sum().sum()).values[0]
+    )
+
     # Add carriers
     n.add("Carrier", "heat pump electricity")
     n.add("Carrier", "resistive heating electricity")
-    
+
     # Add buses
     spatial_nodes = n.buses.query("carrier == 'AC'").index
     n.add(
@@ -1836,7 +1885,7 @@ def add_heat_REMIND(
         carrier="resistive heating electricity",
         unit="MWh_el",
     )
-    
+
     # Add loads
     n.add(
         "Load",
@@ -1854,12 +1903,12 @@ def add_heat_REMIND(
         carrier="resistive heating electricity",
         p_set=elec_resistive_profile_REMIND.loc[n.snapshots],
     )
-    
+
     # Add links
     n.add(
         "Link",
         spatial_nodes,
-        carrier = "heat pump",
+        carrier="heat pump",
         # This link is not an actual heat pump, but only a link from the electricity bus
         suffix=" heat pump",
         bus0=spatial_nodes,
@@ -1869,12 +1918,12 @@ def add_heat_REMIND(
         p_nom_extendable=False,
         efficiency=1,
         p_min_pu=0,  # Unidirectional link
-        p_max_pu=1,        
+        p_max_pu=1,
     )
     n.add(
         "Link",
         spatial_nodes,
-        carrier = "resistive heating",
+        carrier="resistive heating",
         # This link is not an actual resistive heating, but only a link from the electricity bus
         suffix=" resistive heating",
         bus0=spatial_nodes,
@@ -1886,10 +1935,9 @@ def add_heat_REMIND(
         p_min_pu=0,  # Unidirectional link
         p_max_pu=1,
     )
-    
+
     # TODO: Add stores if configured
-    #if options_heat["dsm"]:
-    
+    # if options_heat["dsm"]:
 
 
 # %%
@@ -1899,9 +1947,9 @@ if __name__ == "__main__":
 
         snakemake = mock_snakemake(
             "add_electricity_REMIND",
-            scenario="PyPSA_PkBudg1000_DEU_rm350_pypsa202504_EV_heatingExport_2025-06-20_14.49.59",
+            scenario="TEST",
             iteration="1",
-            year="2030",
+            year="2050",
             clusters=4,
         )
     configure_logging(snakemake)
@@ -2038,7 +2086,16 @@ if __name__ == "__main__":
     update_p_nom_max(n)
 
     attach_storageunits(n, costs, extendable_carriers, max_hours)
-    attach_stores(n, costs, extendable_carriers)
+    
+    sc_settings = snakemake.params["sector_coupling"]
+
+    attach_stores(
+        n,
+        costs,
+        extendable_carriers,
+        h2_cavern_file=snakemake.input.h2_cavern,
+        cavern_types=sc_settings["additional_hydrogen"]["hydrogen_underground_storage_locations"],
+    )
 
     # Attach preinvestment capacities via additional RCL components
     # that are constrained in solve_electricity
@@ -2066,8 +2123,6 @@ if __name__ == "__main__":
             fp_region_mapping=snakemake.input["region_mapping"],
             fp_technology_cost_mapping=snakemake.input["technology_cost_mapping"],
         )
-
-    sc_settings = snakemake.params["sector_coupling"]
 
     # Attach additional hydrogen demand
     if sc_settings["additional_hydrogen"]["enable"]:

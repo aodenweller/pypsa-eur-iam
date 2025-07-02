@@ -128,7 +128,6 @@ rule build_energy_totals:
         "../scripts/build_energy_totals.py"
 
 
-# TODO: Incorporate later
 rule build_salt_cavern_potentials:
     input:
         salt_caverns="data/bundle/h2_salt_caverns_GWh_per_sqkm.geojson",
