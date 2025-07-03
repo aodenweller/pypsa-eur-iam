@@ -12,12 +12,21 @@ remind_coupling:
   preinstalled_capacities:
     # Cost at which preinvestment capacities are built (annualised in $/MW or $/MWh)
     capital_cost: 0.0
-    # Attach RCL generators
-    generators: true  # Boolean for all generation technologies
-    # Attach free RCL links for these components
+    # Attach RCL generators (all tech)
+    generators: true
+    # Attach RCL links for these components
     links: []  # Any of [H2 electrolysis, H2 fuel cell, battery charger]
-    # Attach free RCL stores for these components
+    # Attach RCL stores for these components
     stores: []  # Any of [H2, battery]
+  # Hydrogen storage settings
+  hydrogen_storage:
+    min_load_electrolysis: 0.1  # p_min_pu of electrolyser link
+    hydrogen_underground_storage_locations:
+      # - onshore  # more than 50 km from sea
+      - nearshore    # within 50 km of sea
+      # - offshore  # Battery storage settings
+  battery_storage:
+    min_fill_battery: 0.15  # e_min_pu of battery store
   # Sector coupling settings (hydrogen, EVs, etc.)
   sector_coupling:
     # Additional hydrogen (not for power storage) based on own implementation
@@ -29,30 +38,35 @@ remind_coupling:
       # per_node: Add addditional hydrogen load to the existing hydrogen bus at each node, no spatial flexibility
       type: per_node  # Either "central_bus" or "per_node"
       buffer_max_hours: 168  # in hours, currently only applies to "central_bus"
-      hydrogen_underground_storage_locations:
-        # - onshore  # more than 50 km from sea
-        - nearshore    # within 50 km of sea
-        # - offshore
     # Electric vehicles based on default PyPSA-Eur implementation
     EVs:
       enable: false
-      bev_share: 0.8  # Share of EV electricity demand from cars
+      bev_share: 0.6  # Share of EV electricity demand from cars
       bev_annual_consumption: 3  # in MWh/year for cars, 3,000 kWh/year
       bet_annual_consumption: 40  # in MWh/year, for trucks, 40,000 kWh/year
-      share_charger: 0.8  # Share of vehicles that have a charger
       bev_charge_rate: 0.011  # in MW, for cars, 11 kW
       bet_charge_rate: 0.15  # in MW, for trucks, 150 kW
-      # Flexibility via demand-side management
-      # See settings below (bev_dsm_restriction_value, bev_dsm_restriction_time)
+      bev_share_charger: 0.8  # Ratio of chargers for BEV
+      bet_share_charger: 0.1  # Ratio of chargers for BET
+      # Flexibility settings
+      # Also see settings below (bev_dsm_restriction_value, bev_dsm_restriction_time)
       dsm: false
-      bev_energy: 0.06  # in MWh, for cars, 60 kWh
-      bet_energy: 0.3  # in MWh, for trucks, 300 kWh
+      bev_energy: 0.06  # in MWh, for cars, 60 kWh, to estimate the store e_nom
+      bet_energy: 0.3  # in MWh, for trucks, 300 kWh, to estimate store e_nom
+      dsm_availability: 0.5  # Share of EVs that can charge flexibly
     # Heating based on PyPSA-Eur heat profile data, but simpler implementation
     heating:
       enable: false
-      # Flexibility via demand-side management (additional storage)
+      # Flexibility settings
       dsm: false
-  # Trigger the solving of the dispatch-only operations network
+      tank_delT: 40  # in °C, 40°C temperature difference
+      hp_tank_size: 200  # in litres, 200 litre store
+      hp_avg_power: 0.006  # in MW, average heat pump 6 kW
+      hp_hours: 2000  # in h, used for 2000 hours
+      resistive_avg_power: 0.004  # in MW, average resistive heater 4 kW
+      resistive_hours: 1000  # in h, used for 1000 hours
+      resistive_tank_size: 50  # in litres, 50 litre store
+  # Settings for the dispatch-only operations network
   solve_operations_network:
     enable: false
     tolerance: 1E-4

@@ -1120,7 +1120,8 @@ def attach_stores(
     costs: pd.DataFrame,
     extendable_carriers: dict,
     h2_cavern_file: str,
-    cavern_types: list,
+    h2_settings: dict,
+    battery_settings: dict,
 ):
     """
     Attach stores to the network.
@@ -1135,8 +1136,10 @@ def attach_stores(
         Dictionary of extendable energy carriers.
     h2_cavern_file : str
         Path to CSV file containing hydrogen cavern storage potentials
-    cavern_types: list
-        List of cavern types to consider for hydrogen storage.
+    h2_settings: dict
+        Dictionary of settings for hydrogen storage.
+    battery_settings: dict
+        Dictionary of settings for battery storage.
     """
     carriers = extendable_carriers["Store"]
 
@@ -1150,6 +1153,8 @@ def attach_stores(
 
         # Get H2 cavern potential
         h2_caverns = pd.read_csv(h2_cavern_file, index_col=0)
+
+        cavern_types = h2_settings["hydrogen_underground_storage_locations"]
 
         if not h2_caverns.empty and set(cavern_types).intersection(h2_caverns.columns):
             h2_caverns = h2_caverns[cavern_types].sum(axis=1)
@@ -1199,6 +1204,7 @@ def attach_stores(
             bus1=h2_buses_i,
             carrier="H2 electrolysis",
             p_nom_extendable=True,
+            p_min_pu=h2_settings["min_load_electrolysis"],
             efficiency=costs.at["electrolysis", "efficiency"],
             capital_cost=costs.at["electrolysis", "capital_cost"],
             marginal_cost=costs.at["electrolysis", "marginal_cost"],
@@ -1230,6 +1236,7 @@ def attach_stores(
             carrier="battery",
             e_cyclic=True,
             e_nom_extendable=True,
+            e_min_pu=battery_settings["min_fill_battery"],
             capital_cost=costs.at["battery storage", "capital_cost"],
             marginal_cost=costs.at["battery", "marginal_cost"],
         )
@@ -1700,10 +1707,12 @@ def add_EVs_REMIND(n, options_ev):
     transport = pd.read_csv(
         snakemake.input.transport_demand, index_col=0, parse_dates=True
     )
+
     # Normalise such that the sum corresponds to the total EV electricity demand (in MWh)
     load_p_set = transport.div(transport.sum(axis=0).sum()) * ev_load["value"].values[0]
 
     # Estimate number of cars from EV load given assumptions in settings
+    # TODO: Get this from EDGE-T
     number_bev = (
         ev_load["value"]
         * options_ev["bev_share"]
@@ -1715,34 +1724,35 @@ def add_EVs_REMIND(n, options_ev):
         / options_ev["bet_annual_consumption"]
     )
 
+    # Read in transport data (for distribution of cars to nodes)
+    transport_data = pd.read_csv(snakemake.input.transport_data, index_col=0)
+    number_cars = transport_data["number cars"]
+    # Distribute number of cars to spatial nodes using number of cars
+    number_bev = (number_cars * number_bev[0]) / number_cars.sum()
+    number_bet = (number_cars * number_bet[0]) / number_cars.sum()
+
     # Estimate simultaneous charging power in MW (used for link)
     charge_power = (
-        number_bev * options_ev["bev_charge_rate"]
-        + number_bet * options_ev["bet_charge_rate"]
+        number_bev * options_ev["bev_charge_rate"] * options_ev["bev_share_charger"]
+        + number_bet * options_ev["bet_charge_rate"] * options_ev["bet_share_charger"]
     )
+    link_p_nom = charge_power * options_ev["dsm_availability"]
 
     # Estimate total battery pack capacity in MWh (used for store)
     battery_energy = (
         number_bev * options_ev["bev_energy"] + number_bet * options_ev["bet_energy"]
     )
+    store_e_nom = battery_energy * options_ev["dsm_availability"]
 
     # Read in availability profile for charging
     link_avail_profile = pd.read_csv(
         snakemake.input.avail_profile, index_col=0, parse_dates=True
     )
 
-    # Number of cars in total
-    number_cars = number_bev + number_bet
-
-    # Distribute charg_power to spatial nodes using number of cars
-    link_p_nom = (charge_power.values[0] * number_cars / number_cars.sum()).values[0]
-
     # Read in DSM profile
     store_dsm_profile = pd.read_csv(
         snakemake.input.dsm_profile, index_col=0, parse_dates=True
     )
-    # Distribute DSM profile to spatial nodes using number of cars
-    store_e_nom = (battery_energy.values[0] * number_cars / number_cars.sum()).values[0]
 
     n.add("Carrier", "EV battery")
 
@@ -1755,9 +1765,21 @@ def add_EVs_REMIND(n, options_ev):
         unit="MWh_el",
     )
 
-    p_shifted = (
-        load_p_set + cycling_shift(load_p_set, 1) + cycling_shift(load_p_set, 2)
-    ) / 3
+    # p_set = (
+    #     load_p_set + cycling_shift(load_p_set, 2) + cycling_shift(load_p_set, 4)
+    # )
+
+    # If DSM is enabled don't shift the load profile
+    if options_ev["dsm"]:
+        p_set = load_p_set
+    # If DSM is not enabled, shift the load profile to create a sensible
+    # charging profile with a slight mid-day peak and a more pronounced evening peak
+    else:
+        p_set = (
+            cycling_shift(load_p_set, 1)
+            + cycling_shift(load_p_set, 2)
+            + cycling_shift(load_p_set, 3)
+        ) / 3
 
     n.add(
         "Load",
@@ -1765,7 +1787,7 @@ def add_EVs_REMIND(n, options_ev):
         suffix=" land transport EV",
         bus=spatial_nodes + " EV battery",
         carrier="land transport EV",
-        p_set=p_shifted.loc[n.snapshots, spatial_nodes],
+        p_set=p_set.loc[n.snapshots, spatial_nodes],
     )
 
     n.add(
@@ -1777,7 +1799,6 @@ def add_EVs_REMIND(n, options_ev):
         p_nom=link_p_nom,
         carrier="BEV charger",
         p_max_pu=link_avail_profile.loc[n.snapshots, spatial_nodes],
-        # lifetime=1,
         efficiency=1,
     )
 
@@ -1936,8 +1957,80 @@ def add_heat_REMIND(
         p_max_pu=1,
     )
 
-    # TODO: Add stores if configured
-    # if options_heat["dsm"]:
+    # Add store if configured
+    if options_heat["dsm"]:
+        # Estimate number of heat pumps
+        number_hp = (
+            elec_heat_pump_REMIND["value"]
+            / options_heat["hp_avg_power"]
+            / options_heat["hp_hours"]
+        )
+        # Estimate total thermal storage size in MWh
+        spec_heat_cap_water = 4.18  # kJ per kg*K
+        kj2mwh = 1 / 3.6e6
+        thermal_storage_hp = (
+            number_hp
+            * options_heat["hp_tank_size"]
+            * spec_heat_cap_water
+            * options_heat["tank_delT"]
+            * kj2mwh
+        )
+        # Distribute total thermal storage to spatial nodes by using heat_demand
+        thermal_storage_hp_spatial = (
+            heat_demand.sum() * thermal_storage_hp.values[0]
+        ) / heat_demand.sum().sum()
+
+        # Calculate corresponding electricity storage size in MWh given time-dependent COP
+        elec_storage_hp_spatial = thermal_storage_hp_spatial / cop_heat_pump
+        
+        # Size of store is the maximum
+        elec_storage_hp_max = elec_storage_hp_spatial.max()
+        
+        # Estimate number of resistive heaters
+        number_resistive = (
+            elec_resistive_REMIND["value"]
+            / options_heat["resistive_avg_power"]
+            / options_heat["resistive_hours"]
+        )
+        
+        # Estimate total thermal storage size in MWh
+        thermal_storage_resistive = (
+            number_resistive
+            * options_heat["resistive_tank_size"]
+            * spec_heat_cap_water
+            * options_heat["tank_delT"]
+            * kj2mwh
+        )
+        # Distribute total thermal storage to spatial nodes by using heat_demand
+        thermal_storage_resistive_spatial = (
+            heat_demand.sum() * thermal_storage_resistive.values[0]
+        ) / heat_demand.sum().sum()
+        
+        n.add(
+            "Store",
+            spatial_nodes,
+            suffix=" heat pump storage",
+            bus=spatial_nodes + " heat pump electricity",
+            carrier="heat pump storage",
+            e_cyclic=True,
+            e_nom=elec_storage_hp_max,
+            e_nom_extendable=False,
+            e_max_pu=(elec_storage_hp_spatial / elec_storage_hp_max),
+            e_min_pu=0,
+        )
+        
+        n.add(
+            "Store",
+            spatial_nodes,
+            suffix=" resistive heating storage",
+            bus=spatial_nodes + " resistive heating electricity",
+            carrier="resistive heating storage",
+            e_cyclic=True,
+            e_nom=thermal_storage_resistive_spatial,
+            e_nom_extendable=False,
+            e_max_pu=1,
+            e_min_pu=0,
+        )
 
 
 # %%
@@ -1947,8 +2040,8 @@ if __name__ == "__main__":
 
         snakemake = mock_snakemake(
             "add_electricity_REMIND",
-            scenario="TEST",
-            iteration="1",
+            scenario="testflex",
+            iteration="20",
             year="2050",
             clusters=4,
         )
@@ -2086,7 +2179,7 @@ if __name__ == "__main__":
     update_p_nom_max(n)
 
     attach_storageunits(n, costs, extendable_carriers, max_hours)
-    
+
     sc_settings = snakemake.params["sector_coupling"]
 
     attach_stores(
@@ -2094,7 +2187,8 @@ if __name__ == "__main__":
         costs,
         extendable_carriers,
         h2_cavern_file=snakemake.input.h2_cavern,
-        cavern_types=sc_settings["additional_hydrogen"]["hydrogen_underground_storage_locations"],
+        h2_settings=snakemake.params["h2_settings"],
+        battery_settings=snakemake.params["battery_settings"],
     )
 
     # Attach preinvestment capacities via additional RCL components

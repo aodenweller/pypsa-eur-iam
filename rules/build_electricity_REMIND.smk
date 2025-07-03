@@ -686,6 +686,8 @@ rule add_electricity_REMIND:
         exclude_carriers=config_provider("clustering", "exclude_carriers"),
         # REMIND input
         preinstalled_capacities=config_provider("remind_coupling","preinstalled_capacities"),
+        h2_settings=config_provider("remind_coupling", "hydrogen_storage"),
+        battery_settings=config_provider("remind_coupling", "battery_storage"),
         sector_coupling=config_provider("remind_coupling","sector_coupling"),
         constraints=config_provider("solving","constraints"),  # TODO: Remove this param
     input:

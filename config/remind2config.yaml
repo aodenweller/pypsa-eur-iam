@@ -56,7 +56,13 @@ enable_heating:
     0: false
     1: true
 
-# TODO: enable_flexible_heating
+enable_flexible_heating:
+  remind_switch: c32_pypsa_cfg_heating
+  overwrite_pypsa: remind_coupling.sector_coupling.heating.dsm
+  switch_mapping:
+    0: false
+    1: false
+    2: true
 
 enable_perturbed_scenarios:
   remind_switch: c32_pypsa_cfg_perturb
