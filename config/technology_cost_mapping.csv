@@ -72,28 +72,28 @@ HVAC overhead,CO2 intensity,setting to reference value,0,tCO2/MWh_th,
 HVAC overhead,efficiency,setting to reference value,1,p.u.,Process without direct losses
 HVAC overhead,FOM,mapping to PyPSA-EUR default values,,,
 HVAC overhead,fuel,setting to reference value,0,USD/MWh,Dummy value to avoid PyPSA-EUR throwing an error
-HVAC overhead,investment,scaling original values based on reference PyPSA-EUR technology,windon,,
+HVAC overhead,investment,mapping to PyPSA-EUR default values,,,
 HVAC overhead,lifetime,mapping to PyPSA-EUR default values,,,
 HVAC overhead,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
 HVDC inverter pair,CO2 intensity,setting to reference value,0,tCO2/MWh_th,
 HVDC inverter pair,efficiency,setting to reference value,1,p.u.,Process without direct losses
 HVDC inverter pair,FOM,mapping to PyPSA-EUR default values,,,
 HVDC inverter pair,fuel,setting to reference value,0,USD/MWh,Dummy value to avoid PyPSA-EUR throwing an error
-HVDC inverter pair,investment,scaling original values based on reference PyPSA-EUR technology,windon,,
+HVDC inverter pair,investment,mapping to PyPSA-EUR default values,,,
 HVDC inverter pair,lifetime,mapping to PyPSA-EUR default values,,,
 HVDC inverter pair,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
 HVDC overhead,CO2 intensity,setting to reference value,0,tCO2/MWh_th,
 HVDC overhead,efficiency,setting to reference value,1,p.u.,Process without direct losses
 HVDC overhead,FOM,mapping to PyPSA-EUR default values,,,
 HVDC overhead,fuel,setting to reference value,0,USD/MWh,Dummy value to avoid PyPSA-EUR throwing an error
-HVDC overhead,investment,scaling original values based on reference PyPSA-EUR technology,windon,,
+HVDC overhead,investment,mapping to PyPSA-EUR default values,,,
 HVDC overhead,lifetime,mapping to PyPSA-EUR default values,,,
 HVDC overhead,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
 HVDC submarine,CO2 intensity,setting to reference value,0,tCO2/MWh_th,
 HVDC submarine,efficiency,setting to reference value,1,p.u.,Process without direct losses
 HVDC submarine,FOM,mapping to PyPSA-EUR default values,,,
 HVDC submarine,fuel,setting to reference value,0,USD/MWh,Dummy value to avoid PyPSA-EUR throwing an error
-HVDC submarine,investment,scaling original values based on reference PyPSA-EUR technology,windon,,
+HVDC submarine,investment,mapping to PyPSA-EUR default values,,,
 HVDC submarine,lifetime,mapping to PyPSA-EUR default values,,,
 HVDC submarine,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
 hydro,CO2 intensity,setting to reference value,0,tCO2/MWh_th,Process without direct emissions
