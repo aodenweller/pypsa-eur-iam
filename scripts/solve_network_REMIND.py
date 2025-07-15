@@ -1409,7 +1409,7 @@ def extra_functionality(
     """
     config = n.config
     constraints = config["solving"].get("constraints", {})
-    rcl_config = config["remind_coupling"]["preinvestment_capacities"]
+    rcl_config = config["remind_coupling"]["preinstalled_capacities"]
     if constraints["BAU"] and n.generators.p_nom_extendable.any():
         add_BAU_constraints(n, config)
     if constraints["SAFE"] and n.generators.p_nom_extendable.any():

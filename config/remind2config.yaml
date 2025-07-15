@@ -7,14 +7,14 @@
 # RCL (Region-Capacity-Limit settings) used to pass free capacity to PyPSA
 enable_RCL_generators:
   remind_switch: c32_pypsa_cfg_rcl_generators
-  overwrite_pypsa: remind_coupling.preinvestment_capacities.generators
+  overwrite_pypsa: remind_coupling.preinstalled_capacities.generators
   switch_mapping:
     0: false
     1: true
 
 enable_RCL_links:
   remind_switch: c32_pypsa_cfg_rcl_links
-  overwrite_pypsa: remind_coupling.preinvestment_capacities.links
+  overwrite_pypsa: remind_coupling.preinstalled_capacities.links
   switch_mapping:
     0: []
     1: [H2 electrolysis, H2 fuel cell]
@@ -23,7 +23,7 @@ enable_RCL_links:
 
 enable_RCL_stores:
   remind_switch: c32_pypsa_cfg_rcl_stores
-  overwrite_pypsa: remind_coupling.preinvestment_capacities.stores
+  overwrite_pypsa: remind_coupling.preinstalled_capacities.stores
   switch_mapping:
     0: []
     1: [H2]
@@ -32,7 +32,7 @@ enable_RCL_stores:
 
 cost_of_RCL_components:
   remind_switch: c32_pypsa_cfg_rcl_cost
-  overwrite_pypsa: remind_coupling.preinvestment_capacities.capital_cost
+  overwrite_pypsa: remind_coupling.preinstalled_capacities.capital_cost
 
 # Sector coupling settings (Passenger EVs, Freight EVs, Heat pumps, Resistive heating)
 enable_EV_pass:
