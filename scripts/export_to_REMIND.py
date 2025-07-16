@@ -508,6 +508,7 @@ def calculate_markups_demand(n, grouper, z_cutoff, map_to_remind):
 
     # Get average electricity price
     load_prices = calculate_electricity_prices(n, z_cutoff)
+    load_prices = load_prices.query("value != 0").reset_index(drop=True)
     load_price_avg = load_prices.query("general_carrier == 'total'").value.values[0]
 
     # Calculate markups for the demand side
@@ -520,7 +521,7 @@ def calculate_markups_demand(n, grouper, z_cutoff, map_to_remind):
     # If NA set to 0
     markups_demand["value"] = markups_demand["value"].fillna(0)
 
-    return process_data(markups_demand, cols=grouper, map_to_remind=map_to_remind)
+    return markups_demand
 
 
 def calculate_peak_residual_loads(n, grouper, kind):
@@ -603,46 +604,6 @@ def calculate_peak_residual_loads(n, grouper, kind):
     peak_residual_load = peak_residual_load[[grouper, kind]]
 
     return peak_residual_load
-
-
-def calculate_availability_factors(n, comps, grouper, map_to_remind):
-    """
-    Calculate the availability factor of generators in the network.
-
-    Only public PyPSA API is used (future-proof).
-    """
-
-    # 1. Compute availability time-series
-    p_max_pu = n.generators_t.p_max_pu
-    p_nom_opt = n.generators.p_nom_opt
-
-    availability = p_max_pu.multiply(p_nom_opt, axis=1)
-
-    # 2. Get snapshot weightings (important if snapshots are not equally spaced)
-    snapshot_weightings = n.snapshot_weightings.generators
-
-    # 3. Aggregate over time using weighting
-    weighted_availability = (
-        availability.T @ snapshot_weightings
-    ) / snapshot_weightings.sum()
-
-    # 4. Attach generator attributes (like carrier, technology) to availability
-    weighted_availability = weighted_availability.rename_axis("Generator").to_frame(
-        "availability"
-    )
-    weighted_availability = weighted_availability.join(n.generators[grouper])
-
-    # 5. Group by desired category (e.g., carrier, bus, technology) and sum
-    df = weighted_availability.groupby(grouper).sum()
-
-    # 6. Now divide by total capacity
-    total_capacity = n.generators.groupby(grouper).p_nom_opt.sum()
-
-    df["value"] = df["availability"] / total_capacity
-
-    df = df.drop(columns=["availability"]).reset_index()
-
-    return process_data(df, cols=grouper, map_to_remind=map_to_remind)
 
 
 def calculate_potentials(n, grouper, map_to_remind):
@@ -1204,14 +1165,14 @@ if __name__ == "__main__":
 
         snakemake = mock_snakemake(
             "export_to_REMIND",
-            configfiles="resources/PyPSA_PkBudg1000_start2030_fixRelShare_noFlex_2025-07-11_11.56.38/i1/config.remind_scenario.yaml",
-            iteration="1",
-            scenario="PyPSA_PkBudg1000_start2030_fixRelShare_noFlex_2025-07-11_11.56.38",
+            configfiles="resources/PyPSA_KN2045_start2030_noDemandMarkups_noFlex_2025-07-15_11.09.41/i1/config.remind_scenario.yaml",
+            iteration="20",
+            scenario="PyPSA_KN2045_start2030_noDemandMarkups_noFlex_2025-07-15_11.09.41",
         )
 
         # Manual input for testing
         fp_networks = [
-            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2050/networks/base_s_4_elec_1H-Ep137.1.nc",
+            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2050/networks/base_s_4_elec_1H-Ep649.5.nc",
             # f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2130/networks/base_s_4_elec_3H-Ep150.4.nc",
         ]
         fp_triggers_op = [
@@ -1305,19 +1266,6 @@ if __name__ == "__main__":
                 "name": "p32_PyPSA_PeakResLoadRel",
                 "description": "Peak residual load relative to load [1]",
                 "dims": ["year", "region"],
-            },
-        },
-        "availability_factors": {
-            "func": calculate_availability_factors,
-            "params": {
-                "comps": ["Generator"],
-                "grouper": ["region", "general_carrier"],
-                "map_to_remind": True,
-            },
-            "gdx": {
-                "name": "p32_PyPSA_AF",
-                "description": "Availability factors of generators [1]",
-                "dims": ["year", "region", "carrier"],
             },
         },
         "generation_shares": {
