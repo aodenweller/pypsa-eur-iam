@@ -759,7 +759,7 @@ def attach_hydro_REMIND(
     hydro_cap_REMIND = (
         read_remind_data(
             fp_remind_data,
-            "p32_hydroCap",
+            "p32_hydroCapacity",
             rename_columns={"ttot": "year", "all_regi": "region"},
         )
         .query("year == @year")
@@ -814,7 +814,7 @@ def attach_hydro_REMIND(
     hydro_gen_REMIND = (
         read_remind_data(
             fp_remind_data,
-            "p32_hydroGen",
+            "p32_hydroGeneration",
             rename_columns={"ttot": "year", "all_regi": "region"},
         )
         .query("year == @year")
@@ -958,6 +958,226 @@ def attach_hydro_REMIND(
             efficiency_store=0.0,
             cyclic_state_of_charge=True,
             inflow=inflow_t_adj.loc[:, hydro.index],
+        )
+
+
+# TODO: Adjust for multiple regions and for hydro technologies
+def attach_hydro_REMIND_simple(
+    n: pypsa.Network,
+    costs: pd.DataFrame,
+    ppl: pd.DataFrame,
+    profile_hydro: str,
+    hydro_capacities: str,
+    carriers: list,
+    fp_remind_data,
+    fp_region_mapping,
+    year,
+    **params,
+):
+    """
+    Attach hydro generators and storage units to the network, scaling inflow to
+    match the capacity factor from REMIND and fixing dispatch.
+
+    Parameters
+    ----------
+    n : pypsa.Network
+        The PyPSA network to attach the hydro units to.
+    costs : pd.DataFrame
+        DataFrame containing the cost data.
+    ppl : pd.DataFrame
+        DataFrame containing the power plant data.
+    profile_hydro : str
+        Path to the hydro profile data.
+    hydro_capacities : str
+        Path to the hydro capacities data.
+    carriers : list
+        List of hydro energy carriers.
+    **params :
+        Additional parameters for hydro units.
+    """
+    add_missing_carriers(n, carriers)
+    add_co2_emissions(n, costs, carriers)
+
+    ror = ppl.query('carrier == "ror"')
+    phs = ppl.query('carrier == "PHS"')
+    hydro = ppl.query('carrier == "hydro"')
+
+    country = ppl["bus"].map(n.buses.country).rename("country")
+    
+    # Get REMIND region mapping
+    region_mapping = get_region_mapping(
+        fp_region_mapping, source="PyPSA-EUR", target="REMIND-EU", flatten=True
+    )
+    
+    # Get REMIND hydro capacity
+    hydro_cap_REMIND = (
+        read_remind_data(
+            fp_remind_data,
+            "p32_hydroCapacity",
+            rename_columns={"ttot": "year", "all_regi": "region"},
+        )
+        .query("year == @year")
+        .drop(columns="year")
+        .set_index(["region"])
+    )
+    hydro_cap_REMIND *= 1e6  # Convert from TW to MW
+    
+    # Get REMIND hydro generation
+    hydro_gen_REMIND = (
+        read_remind_data(
+            fp_remind_data,
+            "p32_hydroGeneration",
+            rename_columns={"ttot": "year", "all_regi": "region"},
+        )
+        .query("year == @year")
+        .drop(columns="year")
+        .set_index(["region"])
+    )
+    hydro_gen_REMIND *= 8760 * 1e6  # Convert from TWa to MWh
+
+    hydro_cf_REMIND = hydro_gen_REMIND / (hydro_cap_REMIND * 8760)
+
+    # Get inflow time-series and distribute to nodes based on capacities
+    inflow_idx = ror.index.union(hydro.index)
+    if not inflow_idx.empty:
+        dist_key = ppl.loc[inflow_idx, "p_nom"].groupby(country).transform(normed)
+
+        with xr.open_dataarray(profile_hydro) as inflow:
+            inflow_countries = pd.Index(country[inflow_idx])
+            missing_c = inflow_countries.unique().difference(
+                inflow.indexes["countries"]
+            )
+            assert missing_c.empty, (
+                f"'{profile_hydro}' is missing "
+                f"inflow time-series for at least one country: {', '.join(missing_c)}"
+            )
+
+            inflow_t = (
+                inflow.sel(countries=inflow_countries)
+                .rename({"countries": "name"})
+                .assign_coords(name=inflow_idx)
+                .transpose("time", "name")
+                .to_pandas()
+                .multiply(dist_key, axis=1)
+            )
+            
+    # Scale inflow such that the sum matches hydro_gen_REMIND
+    inflow_t_adj = inflow_t * hydro_gen_REMIND["value"].iloc[0] / inflow_t.sum().sum()
+    
+    # Scale capacities to match REMIND hydro capacities
+    cap_correction_factor = hydro_cap_REMIND["value"].iloc[0] / (ror["p_nom"].sum() + hydro["p_nom"].sum())
+    ror_cap_adj = ror["p_nom"] * cap_correction_factor
+    hydro_cap_adj = hydro["p_nom"] * cap_correction_factor
+    
+    # Adjust inflow time series again such that it's never larger than the adjusted capacity
+    # This may lead to a slight discrepancy in the total generation, which is acceptable
+    inflow_t_adj_ror = inflow_t_adj[ror.index].clip(upper=ror_cap_adj, axis=1)
+    inflow_t_adj_hydro = inflow_t_adj[hydro.index].clip(upper=hydro_cap_adj, axis=1)
+
+    # ror is treated as a generator with inflow time-series
+    # For the REMIND coupling, we fix p_set in order
+    if "ror" in carriers and not ror.empty:
+        n.add(
+            "Generator",
+            ror.index,
+            carrier="ror",
+            bus=ror["bus"],
+            p_nom=ror_cap_adj,
+            efficiency=costs.at["ror", "efficiency"],
+            capital_cost=costs.at["ror", "capital_cost"],
+            #weight=ror["p_nom"],
+            p_set=inflow_t_adj_ror[ror.index]
+        )
+
+    # PHS is treated fully separately from REMIND hydro
+    if "PHS" in carriers and not phs.empty:
+        # fill missing max hours to params value and
+        # assume no natural inflow due to lack of data
+        max_hours = params.get("PHS_max_hours", 6)
+        phs = phs.replace({"max_hours": {0: max_hours, np.nan: max_hours}})
+        n.add(
+            "StorageUnit",
+            phs.index,
+            carrier="PHS",
+            bus=phs["bus"],
+            p_nom=phs["p_nom"],
+            capital_cost=costs.at["PHS", "capital_cost"],
+            max_hours=phs["max_hours"],
+            efficiency_store=np.sqrt(costs.at["PHS", "efficiency"]),
+            efficiency_dispatch=np.sqrt(costs.at["PHS", "efficiency"]),
+            cyclic_state_of_charge=True,
+        )
+
+    # Hydro is modelled as a storage unit with inflow time-series
+    # TODO: Harmonise implementation with REMIND for regions with hydro
+    if "hydro" in carriers and not hydro.empty:
+        hydro_max_hours = params.get("hydro_max_hours")
+
+        assert hydro_capacities is not None, "No path for hydro capacities given."
+
+        hydro_stats = pd.read_csv(
+            hydro_capacities, comment="#", na_values="-", index_col=0
+        )
+        e_target = hydro_stats["E_store[TWh]"].clip(lower=0.2) * 1e6
+        e_installed = hydro.eval("p_nom * max_hours").groupby(hydro.country).sum()
+        e_missing = e_target - e_installed
+        missing_mh_i = hydro.query("max_hours.isnull() or max_hours == 0").index
+        # some countries may have missing storage capacity but only one plant
+        # which needs to be scaled to the target storage capacity
+        missing_mh_single_i = hydro.index[
+            ~hydro.country.duplicated() & hydro.country.isin(e_missing.dropna().index)
+        ]
+        missing_mh_i = missing_mh_i.union(missing_mh_single_i)
+
+        if hydro_max_hours == "energy_capacity_totals_by_country":
+            # watch out some p_nom values like IE's are totally underrepresented
+            max_hours_country = (
+                e_missing / hydro.loc[missing_mh_i].groupby("country").p_nom.sum()
+            )
+
+        elif hydro_max_hours == "estimate_by_large_installations":
+            max_hours_country = (
+                hydro_stats["E_store[TWh]"] * 1e3 / hydro_stats["p_nom_discharge[GW]"]
+            )
+        else:
+            raise ValueError(f"Unknown hydro_max_hours method: {hydro_max_hours}")
+
+        max_hours_country.clip(0, inplace=True)
+
+        missing_countries = pd.Index(hydro["country"].unique()).difference(
+            max_hours_country.dropna().index
+        )
+        if not missing_countries.empty:
+            logger.warning(
+                f"Assuming max_hours=6 for hydro reservoirs in the countries: {', '.join(missing_countries)}"
+            )
+        hydro_max_hours = hydro.max_hours.where(
+            (hydro.max_hours > 0) & ~hydro.index.isin(missing_mh_single_i),
+            hydro.country.map(max_hours_country),
+        ).fillna(6)
+
+        if params.get("flatten_dispatch", False):
+            buffer = params.get("flatten_dispatch_buffer", 0.2)
+            average_capacity_factor = inflow_t[hydro.index].mean() / hydro["p_nom"]
+            p_max_pu = (average_capacity_factor + buffer).clip(upper=1)
+        else:
+            p_max_pu = 1
+
+        n.add(
+            "StorageUnit",
+            hydro.index,
+            carrier="hydro",
+            bus=hydro["bus"],
+            p_nom=hydro["p_nom"],
+            max_hours=hydro_max_hours,
+            capital_cost=costs.at["hydro", "capital_cost"],
+            marginal_cost=costs.at["hydro", "marginal_cost"],
+            p_max_pu=p_max_pu,  # dispatch
+            p_min_pu=0.0,  # store
+            efficiency_dispatch=costs.at["hydro", "efficiency"],
+            efficiency_store=0.0,
+            cyclic_state_of_charge=True,
+            inflow=inflow_t.loc[:, hydro.index],
         )
 
 
@@ -2105,7 +2325,7 @@ if __name__ == "__main__":
     if "hydro" in renewable_carriers:
         p = params.renewable["hydro"]
         carriers = p.pop("carriers", [])
-        attach_hydro_REMIND(
+        attach_hydro_REMIND_simple(
             n,
             costs,
             ppl,
