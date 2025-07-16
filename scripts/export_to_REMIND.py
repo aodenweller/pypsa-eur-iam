@@ -1177,15 +1177,15 @@ if __name__ == "__main__":
 
         snakemake = mock_snakemake(
             "export_to_REMIND",
-            configfiles="resources/TEST/i1/config.remind_scenario.yaml",
+            configfiles="resources/PyPSA_PkBudg1000_start2025_rm351_py202507_2025-07-16_12.59.19/i1/config.remind_scenario.yaml",
             iteration="1",
-            scenario="TEST",
+            scenario="PyPSA_PkBudg1000_start2025_rm351_py202507_2025-07-16_12.59.19",
         )
 
         # Manual input for testing
         fp_networks = [
-            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2050/networks/base_s_4_elec_1H-Ep649.5.nc",
-            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2050/networks/base_s_4_elec_1H-Ep649.5.nc",
+            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2050/networks/base_s_4_elec_3H-Ep286.0.nc",
+            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2055/networks/base_s_4_elec_3H-Ep328.2.nc",
             # f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2130/networks/base_s_4_elec_3H-Ep150.4.nc",
         ]
         fp_triggers_op = [
@@ -1538,7 +1538,7 @@ if __name__ == "__main__":
 
     # Create dataframe containing metadata of all networks in this iteration
     networks = pd.DataFrame(fp_networks_all, columns=["filepath"])
-    networks["year"] = networks["filepath"].str.extract(r"y(\d{4})")
+    networks["year"] = networks["filepath"].str.extract(r"/y(\d{4})/")
     networks["op"] = networks["filepath"].str.contains("_op")
     networks["perturbed"] = networks["filepath"].str.contains("op_perturb_")
     networks["ptech"] = networks["filepath"].str.extract(r"op_perturb_(\w+).nc")
