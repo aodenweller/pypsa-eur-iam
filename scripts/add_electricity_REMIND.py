@@ -1536,9 +1536,6 @@ def attach_RCL_generators(
         subset="p_nom_min_rcl"
     )  # Drop all generators which are not subject to RCL constraint
 
-    # Only consider RCL constraint for generators which are extendable
-    rcl_generators = rcl_generators[rcl_generators["p_nom_extendable"] == True]
-
     # Modify properties of to-be-added RCL generators which differ from the original generators
     old_generators = rcl_generators.index
     rcl_generators.index = old_generators + " (RCL)"
@@ -1546,6 +1543,7 @@ def attach_RCL_generators(
     rcl_generators["p_nom_min"] = 0.0
     rcl_generators["p_nom"] = 0.0
     rcl_generators["p_nom_max"] = np.inf
+    rcl_generators["p_nom_extendable"] = True
 
     # Finally add RCL generators to network
     n.add("Generator", rcl_generators.index, **rcl_generators)
@@ -2220,11 +2218,11 @@ if __name__ == "__main__":
 
         snakemake = mock_snakemake(
             "add_electricity_REMIND",
-            scenario="PyPSA_PkBudg1000_start2030_exportnewEVload_2025-07-09_13.38.18",
-            iteration="1",
+            scenario="TEST",
+            iteration="10",
             year="2050",
             clusters=4,
-            configfiles="resources/PyPSA_PkBudg1000_start2030_exportnewEVload_2025-07-09_13.38.18/i1/config.remind_scenario.yaml"
+            configfiles="resources/TEST/i10/config.remind_scenario.yaml"
         )
     configure_logging(snakemake)
     set_scenario_config(snakemake)
