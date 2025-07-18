@@ -509,22 +509,22 @@ if __name__ == "__main__":
     costs = pd.concat([costs, discount_rate])
 
     #%%
-    # Special case: Convert electrolysis capex from USD/MW_H2 (output, in REMIND) to USD/MW_e (input, in PyPSA)
-    # Note: For hydrogen turbines, the correction from USD/MW_el (output, in REMIND) to USD/MW_e (input, in PyPSA)
-    # is done in add_extra_components
+    # Special case: Convert electrolysis capex from USD/MW_H2 (output, in REMIND) to USD/MW_el (input, in PyPSA)
+    # Note: For hydrogen turbines, the correction from USD/MW_el (output, in REMIND) to USD/MW_H2 (input, in PyPSA)
+    # is done in add_extra_components by default
     tech = "electrolysis"
     costs.loc[
         (costs["technology"] == tech) & (costs["parameter"] == "investment"), "value"
-    ] *= costs.loc[
+    ] /= costs.loc[
         (costs["technology"] == tech) & (costs["parameter"] == "efficiency"), "value"
     ].values
-    logger.info(f"Corrected investment costs for {tech} from MW_H2 output to MW_e input.")
+    logger.info(f"Corrected investment costs for {tech} from MW_H2 output to MW_el input.") 
 
     # Special case: Convert battery inverter capex from USD/MW_e (output, in REMIND) to USD/MW_e (input, in PyPSA)
     tech = "battery inverter"
     costs.loc[
         (costs["technology"] == tech) & (costs["parameter"] == "investment"), "value"
-    ] *= costs.loc[
+    ] /= costs.loc[
         (costs["technology"] == tech) & (costs["parameter"] == "efficiency"), "value"
     ].values
     logger.info(f"Corrected investment costs for {tech} from MW_e output to MW_e input.")
