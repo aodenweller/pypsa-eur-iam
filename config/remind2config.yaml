@@ -99,6 +99,10 @@ enable_resistive_dsm:
     1: false
     2: true
 
+set_electrolysis_min_load:
+  remind_switch: c32_pypsa_cfg_min_load_elh2
+  overwrite_pypsa: remind_coupling.hydrogen_storage.min_load_electrolysis
+
 # Calculate perturbed scenarios (to numerically determine partial derivative)
 enable_perturbed_scenarios:
   remind_switch: c32_pypsa_cfg_perturb

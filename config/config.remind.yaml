@@ -24,7 +24,8 @@ remind_coupling:
     hydrogen_underground_storage_locations:
       - onshore  # more than 50 km from sea
       - nearshore    # within 50 km of sea
-      # - offshore  # Battery storage settings
+      # - offshore
+  # Battery storage settings
   battery_storage:
     min_fill_battery: 0.15  # e_min_pu of battery store
   # Sector coupling settings (hydrogen, EVs, etc.)
@@ -1109,7 +1110,7 @@ solving:
 
   gurobi_hpc_tunnel:
     use_tunnel: True
-    tunnel_port: 1080
+    tunnel_port: 26993
 
   solver_options:
     highs-default:
