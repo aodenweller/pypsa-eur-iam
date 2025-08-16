@@ -1688,6 +1688,13 @@ if __name__ == "__main__":
 
     logger.info(f"Maximum memory usage: {mem.mem_usage}")
 
+    # Make sure the output directory exists (filesystem issues)
+    output_dir = os.path.dirname(snakemake.output.network)
+    config_dir = os.path.dirname(snakemake.output.config)
+    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(config_dir, exist_ok=True)
+    time.sleep(1)
+    
     n.meta = dict(snakemake.config, **dict(wildcards=dict(snakemake.wildcards)))
     n.export_to_netcdf(snakemake.output.network)
 
