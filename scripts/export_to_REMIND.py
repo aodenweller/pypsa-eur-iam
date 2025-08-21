@@ -932,6 +932,51 @@ def calculate_generation_shares(n, grouper, year):
     return generation_shares
 
 
+def calculate_grid_flows(n, grouper):
+    """
+    Calculate grid flows for AC and DC links in the network.
+
+    Parameters
+    ----------
+    n : pypsa.Network
+        Network to calculate grid flows for.
+    grouper : list
+        List of columns to group the transmission flows by.
+    """
+    transmission = n.statistics.transmission(
+        comps=["Link", "Line"],
+        groupby=grouper,
+    )
+    transmission = (
+        transmission.to_frame("value")
+        .reset_index())
+
+    return transmission
+
+def calculate_grid_capacities(n, grouper):
+    """
+    Calculate transmission capacities for AC and DC links in the network in TW*km.
+    
+    Parameters
+    ----------
+    n : pypsa.Network
+        Network to calculate transmission capacities for.
+    grouper : list
+        List of columns to group the transmission capacities by.
+    """
+    # Get AC
+    n.lines["twkm"] = n.lines["s_nom_opt"] * n.lines["length"] * 1E-6
+    ac_cap = n.lines.groupby(grouper)["twkm"].sum().rename("value")
+
+    # Get DC
+    n.links["twkm"] = n.links["p_nom_opt"] * n.links["length"] * 1E-6
+    dc_cap = n.links.query("general_carrier == 'DC'").groupby(grouper)["twkm"].sum().rename("value")
+    
+    # Combine AC and DC capacities
+    grid_capacities = pd.concat([ac_cap, dc_cap]).to_frame().reset_index()
+
+    return grid_capacities
+
 def calculate_difference_quotient(
     n_opt, n_pert, ptech, property_func, grouper, exclude=None, **kwargs
 ):
@@ -1263,14 +1308,14 @@ if __name__ == "__main__":
 
         snakemake = mock_snakemake(
             "export_to_REMIND",
-            configfiles="resources/PyPSA_KN2045_start2030_noDemandMarkup_noFlex_2025-07-16_23.30.57/i20/config.remind_scenario.yaml",
-            iteration="20",
-            scenario="TEST",
+            configfiles="resources/PyPSA_KN2045_s2030_Flex_autoConv_2025-08-15_11.42.45/i23/config.remind_scenario.yaml",
+            iteration="23",
+            scenario="PyPSA_KN2045_s2030_Flex_autoConv_2025-08-15_11.42.45",
         )
 
         # Manual input for testing
         fp_networks = [
-            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2050/networks/base_s_4_elec_3H-Ep861.6.nc",
+            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2050/networks/base_s_4_elec_1H-Ep857.3.nc",
             #f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2055/networks/base_s_4_elec_3H-Ep328.2.nc",
             # f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2130/networks/base_s_4_elec_3H-Ep150.4.nc",
         ]
@@ -1614,6 +1659,14 @@ if __name__ == "__main__":
         "hourly_prices": {
             "func": calculate_electricity_prices,
             "params": {"hourly": True, "z_cutoff": False},
+        },
+        "grid_flows": {
+            "func": calculate_grid_flows,
+            "params": {"grouper": ["region", "general_carrier"]},
+        },
+        "grid_capacities": {
+            "func": calculate_grid_capacities,
+            "params": {"grouper": ["region", "general_carrier"]},
         },
     }
 
