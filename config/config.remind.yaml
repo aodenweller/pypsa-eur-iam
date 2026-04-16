@@ -81,19 +81,6 @@ remind_coupling:
       tank_size: 200  # in litres
       tank_share: 0.1  # Share of resistive heaters with tank storage
       dsm_availability: 0.5  # Share of resistive heaters operating flexibly
-  # Settings for the dispatch-only operations network
-  solve_operations_network:
-    enable: false
-    tolerance: 1E-4
-  # Enable perturbation of networks for each of the following technologies
-  # This can be used in order to numerically determine the partial derivatives of some key coupled
-  # variables (e.g. capacity factors, market values) w.r.t perturbed capacity in order to tell REMIND
-  # how PyPSA would roughly respond to capacity changes. This stabilises convergence, avoiding oscillations.
-  solve_perturbed_network:
-    enable: false
-    generators: [solar, onwind, offwind, OCGT, CCGT, biomass, coal]  # regex pattern, used in wildcard ptech
-    min_capacity_share: 0.01  # Minimum share of capacity per tech of total capacity (threshold for perturbation) 
-    perturbation_factor: 1.05
   export_to_REMIND:
     # Use the operations network for data export, need to enable it above
     use_operations_network: false
@@ -130,7 +117,7 @@ foresight: overnight
 # Wildcard docs in https://pypsa-eur.readthedocs.io/en/latest/wildcards.html
 scenario:
   clusters:
-  - 10  # REMIND coupling specific
+  - 4  # REMIND coupling specific
   opts:  # REMIND coupling specific
   - '3H-EpREMIND' #"-EpREMIND" is placeholder for setting the emissions prices through REMIND
   year: [2025, 2030, 2035, 2040, 2045, 2050, 2055, 2060, 2070, 2080, 2090, 2100, 2110, 2130, 2150]
@@ -1109,7 +1096,7 @@ solving:
     options: gurobi-default
 
   gurobi_hpc_tunnel:
-    use_tunnel: True
+    use_tunnel: false
     tunnel_port: 26998
     login_node: "02"
     timeout_s: 15

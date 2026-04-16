@@ -97,13 +97,6 @@ set-resources:
   extract_coupling_parameters:
     parition: "priority"
     qos: "standby"
-# When running operation networks, submit to priority standby
-  solve_operations_network:
-    partition: "priority"
-    qos: "standby"
-  solve_operations_perturbed_network:
-    partition: "priority"
-    qos: "standby"
   # Due to group-components aggregating mem_mb resources,
   # the high default requests for mem_mb of these will exceed permitted memory requests in queue
   # but that much memory is currently not needed for small PyPSA-Eur models, so we overwrite the values here

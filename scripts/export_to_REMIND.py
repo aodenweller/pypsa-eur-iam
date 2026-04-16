@@ -238,11 +238,7 @@ def process_data(df, cols, map_to_remind):
     if map_to_remind:
         df = map_and_explode(
             df.copy(), "general_carrier"
-        )  # Make a copy before modifying
-        if "carrier_perturbed" in df.columns:
-            df = map_and_explode(
-                df.copy(), "carrier_perturbed"
-            )  # Make a copy before modifying
+        )
 
     return df
 
@@ -977,69 +973,6 @@ def calculate_grid_capacities(n, grouper):
 
     return grid_capacities
 
-def calculate_difference_quotient(
-    n_opt, n_pert, ptech, property_func, grouper, exclude=None, **kwargs
-):
-    """
-    Calculate the difference quotient as a numerical approximation of the partial
-    derivative of a property function with respect to the capacity of a specific technology.
-
-    Parameters
-    ----------
-    n_opt : pypsa.Network
-        Optimal PyPSA network.
-    n_pert : pypsa.Network
-        Perturbed PyPSA network.
-    ptech : str
-        Technology that was perturbed.
-    property_func : function
-        Function for which the difference quotient is calculated.
-    grouper : list
-        List of columns to group the results by.
-    exclude: list
-        List of general_carrier elements to exclude from the results.
-    """
-
-    def get_filtered_capacity(n, ptech, grouper):
-        # Get optimal capacity of the perturbed technology
-        return (
-            n.statistics.optimal_capacity(comps="Generator", groupby=grouper)
-            .to_frame()
-            .reset_index()
-            .loc[
-                lambda x: x["general_carrier"].str.contains(ptech, case=False, na=False)
-            ]
-        )
-
-    # Get the property values for optimal and perturbed networks
-    prop_opt = property_func(n_opt, grouper=grouper, **kwargs)
-    prop_pert = property_func(n_pert, grouper=grouper, **kwargs)
-    prop_merged = prop_opt.merge(prop_pert, on=grouper, suffixes=("_orig", "_pert"))
-
-    # Extract total capacities for the perturbed technology
-    cap_orig = get_filtered_capacity(n_opt, ptech, grouper)
-    cap_pert = get_filtered_capacity(n_pert, ptech, grouper)
-    cap_merged = cap_orig.merge(cap_pert, on=grouper, suffixes=("_orig", "_pert"))
-    cap_merged.rename(columns={"general_carrier": "carrier_perturbed"}, inplace=True)
-
-    # Merge capacity with property values
-    merged = prop_merged.merge(cap_merged, on="region")
-
-    # Exclude unwanted components from both general_carrier and carrier_perturbed
-    if exclude:
-        merged = merged.query(
-            "general_carrier not in @exclude and carrier_perturbed not in @exclude"
-        ).copy()
-
-    # Compute difference quotient
-    merged["value"] = (merged["value_pert"] - merged["value_orig"]) / (
-        merged["p_nom_opt_pert"] - merged["p_nom_opt_orig"]
-    )
-    merged = merged[["region", "general_carrier", "carrier_perturbed", "value"]]
-    merged = process_data(merged, cols=grouper, map_to_remind=True)
-
-    return merged
-
 
 # Currently not in use
 def determine_crossborder_flow_and_price(network, carrier=["AC", "DC"]):
@@ -1308,27 +1241,19 @@ if __name__ == "__main__":
 
         snakemake = mock_snakemake(
             "export_to_REMIND",
-            configfiles="resources/PyPSA_KN2045_s2030_Flex_autoConv_2025-08-15_11.42.45/i23/config.remind_scenario.yaml",
-            iteration="23",
-            scenario="PyPSA_KN2045_s2030_Flex_autoConv_2025-08-15_11.42.45",
+            configfiles="resources/TEST/i1/config.remind_scenario.yaml",
+            iteration="1",
+            scenario="TEST",
         )
 
         # Manual input for testing
         fp_networks = [
-            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2050/networks/base_s_4_elec_1H-Ep857.3.nc",
+            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2030/networks/base_s_4_elec_1H-Ep49.2.nc",
             #f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2055/networks/base_s_4_elec_3H-Ep328.2.nc",
             # f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2130/networks/base_s_4_elec_3H-Ep150.4.nc",
         ]
-        fp_triggers_op = [
-            # f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2030/networks/elec_s_4_ec_lcopt_3H-Ep131.8_op_trigger",
-        ]
-        fp_triggers_op_perturb = [
-            # f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2030/networks/elec_s_4_ec_lcopt_3H-Ep131.8_op_perturb_biomass_trigger",
-        ]
     else:
         fp_networks = snakemake.input["networks"]
-        fp_triggers_op = snakemake.input["triggers_op"]
-        fp_triggers_op_perturb = snakemake.input["triggers_op_perturb"]
 
     configure_logging(snakemake)
 
@@ -1528,39 +1453,6 @@ if __name__ == "__main__":
                 "dims": ["year", "region"],
             },
         },
-        "difference_quotient_capacity_factors": {
-            "func": calculate_difference_quotient,
-            "params": {
-                "property_func": calculate_capacity_factors,
-                "comps": ["Generator"],
-                "grouper": ["region", "general_carrier"],
-                "exclude": ["nuclear", "hydro"],  # TODO: Put in config
-                "map_to_remind": False,  # Applies to property_func
-            },
-            "gdx": {
-                "name": "p32_PyPSA_DQ_CF",
-                "description": "Difference quotients of capacity factors w.r.t. capacity [1/MW]",
-                "dims": ["year", "region", "carrier", "carrier"],
-            },
-        },
-        "difference_quotient_markups_supply": {
-            "func": calculate_difference_quotient,
-            "params": {
-                "property_func": calculate_markups_supply,
-                "comps": ["Generator"],
-                "grouper": ["region", "general_carrier"],
-                "exclude": ["nuclear", "hydro"],  # TODO: Put in config
-                "z_cutoff": snakemake.config["remind_coupling"]["export_to_REMIND"][
-                    "z_cutoff"
-                ],
-                "map_to_remind": False,  # Applies to propert_func
-            },
-            "gdx": {
-                "name": "p32_PyPSA_DQ_MarkupSupply",
-                "description": "Difference quotients of supply-side markups w.r.t. capacity [($/MWh)/MW]",
-                "dims": ["year", "region", "carrier", "carrier"],
-            },
-        },
     }
 
     # Define dictionary of reporting parameters
@@ -1676,98 +1568,20 @@ if __name__ == "__main__":
 
     remind_coupling = snakemake.params.get("remind_settings")
 
-    # Operation networks
-    if fp_triggers_op:
-        logger.info("Checking which operational networks are available.")
-        # Get the list of operational network file paths by replacing "_trigger" with ".nc"
-        fp_networks_op = [fp.replace("_trigger", ".nc") for fp in fp_triggers_op]
-        # Sleep for 5 seconds to ensure all files are available
-        time.sleep(5)
-        # Check which operational network files exist
-        fp_networks_op_available = [fp for fp in fp_networks_op if os.path.exists(fp)]
-        # Log warnings for any missing files
-        missing_networks_op = set(fp_networks_op) - set(fp_networks_op_available)
-        for missing in missing_networks_op:
-            logger.warning(f"Operational network {missing} not found. Skipping.")
-    else:
-        fp_networks_op_available = []
-
-    # Perturbed networks
-    if fp_triggers_op_perturb:
-        logger.info("Checking which perturbed networks are available.")
-        # Get the list of perturbed network file paths by replacing "_trigger" with ".nc"
-        fp_networks_perturb = [
-            fp.replace("_trigger", ".nc") for fp in fp_triggers_op_perturb
-        ]
-        # Sleep for 5 seconds to ensure all files are available
-        time.sleep(5)
-        # Check which perturbed network files exist
-        fp_networks_perturb_available = [
-            fp for fp in fp_networks_perturb if os.path.exists(fp)
-        ]
-        # Log warnings for any missing files
-        missing_networks_perturb = set(fp_networks_perturb) - set(
-            fp_networks_perturb_available
-        )
-        for missing in missing_networks_perturb:
-            logger.warning(f"Perturbed network {missing} not found. Skipping.")
-    else:
-        fp_networks_perturb_available = []
-
-    # Combine all networks
-    fp_networks_all = (
-        fp_networks + fp_networks_op_available + fp_networks_perturb_available
-    )
-
     # Create dataframe containing metadata of all networks in this iteration
-    networks = pd.DataFrame(fp_networks_all, columns=["filepath"])
+    networks = pd.DataFrame(fp_networks, columns=["filepath"])
     networks["year"] = networks["filepath"].str.extract(r"/y(\d{4})/")
-    networks["op"] = networks["filepath"].str.contains("_op")
-    networks["perturbed"] = networks["filepath"].str.contains("op_perturb_")
-    networks["ptech"] = networks["filepath"].str.extract(r"op_perturb_(\w+).nc")
-    networks["ref"] = ~networks["perturbed"]
     networks = networks.sort_values("year")
-
-    networks_ref = networks.query("ref")
-    networks_ptech = networks.query("perturbed")
-
-    if remind_coupling["export_to_REMIND"]["use_operations_network"]:
-        if remind_coupling["solve_operations_network"]["enable"]:
-            # Group by year and check whether within that group the op=True network is available. If it is, drop the op=False network
-            networks_ref = (
-                networks_ref.groupby("year")
-                .apply(lambda x: x.drop(x[(x["op"] == False)].index))
-                .reset_index(drop=True)
-            )
-        else:
-            logger.warning(
-                "export_to_REMIND.use_operations_network also requires solve_operations_network.enable."
-            )
-    else:
-        # Drop operational networks
-        networks_ref = networks_ref[~networks["op"]].reset_index(drop=True)
-
-    networks = pd.concat([networks_ref, networks_ptech], ignore_index=True)
-
-    # Check if there is exactly one reference network per year
-    net_ref_sum = networks.groupby("year")["ref"].sum()
-    if not net_ref_sum.eq(1).all():
-        raise ValueError(
-            f"Expected exactly one reference network per year, but found {net_ref_sum}"
-        )
-
-    # Print unique years
-    logger.info(f"Unique years in networks: {networks['year'].unique()}")
 
     # Loop over all years
     for year, df in networks.groupby("year"):
         logger.info(f"Processing year {year}, file path: {df['filepath'].values[0]}")
         # Load reference network and add region and general_carrier to network components
-        n = pypsa.Network(df.query("ref")["filepath"].values[0])
+        n = pypsa.Network(df["filepath"].values[0])
         # If the network has no objective, raise a warning and skip
         if not hasattr(n, "objective"):
             logger.warning(
-                f"Network {df.query('ref')['filepath'].values[0]} in year {year} has no objective. The solving probably failed. Skipping."
+                f"Network {df['filepath'].values[0]} in year {year} has no objective. The solving probably failed. Skipping."
             )
             continue
         add_columns_for_processing(n, region_mapping, map_pypsaeur_to_general)
@@ -1775,22 +1589,20 @@ if __name__ == "__main__":
 
         # Calculate and store coupling parameters
         for key, values in coupling_functions.items():
-            # Only calculate non-difference quotients parameters
-            if values["func"] != calculate_difference_quotient:
-                func, params = values["func"], values["params"]
-                # Call function, injecting 'year' if needed
-                result = func(
-                    n, **{**params, "year": year} if "year" in params else params
+            func, params = values["func"], values["params"]
+            # Call function, injecting 'year' if needed
+            result = func(
+                n, **{**params, "year": year} if "year" in params else params
+            )
+            # Insert year in first column
+            result.insert(0, "year", year)
+            # Concatenate data with previous years
+            if key in coupling_parameters:
+                coupling_parameters[key] = pd.concat(
+                    [coupling_parameters[key], result], ignore_index=True
                 )
-                # Insert year in first column
-                result.insert(0, "year", year)
-                # Concatenate data with previous years
-                if key in coupling_parameters:
-                    coupling_parameters[key] = pd.concat(
-                        [coupling_parameters[key], result], ignore_index=True
-                    )
-                else:
-                    coupling_parameters[key] = result
+            else:
+                coupling_parameters[key] = result
 
         # Calculate and store reporting parameters
         for key, values in reporting_functions.items():
@@ -1805,30 +1617,6 @@ if __name__ == "__main__":
                 )
             else:
                 reporting_parameters[key] = result
-
-        # For each year, calculate difference quotients for perturbed networks (if available)
-        for p in df.query("perturbed")["ptech"]:
-
-            # Load perturbed network and add region and general_carrier to network components
-            npert = pypsa.Network(df.query(f"ptech == '{p}'")["filepath"].values[0])
-            add_columns_for_processing(npert, region_mapping, map_pypsaeur_to_general)
-            check_for_mapping_completeness(npert)
-
-            # Calculate difference quotients
-            for key, values in coupling_functions.items():
-                # Now only calculate difference quotients
-                if values["func"] == calculate_difference_quotient:
-                    func, params = values["func"], values["params"]
-                    result = func(n_opt=n, n_pert=npert, ptech=p, **params)
-                    # Insert year in first column
-                    result.insert(0, "year", year)
-                    # Concatenate data
-                    if key in coupling_parameters:
-                        coupling_parameters[key] = pd.concat(
-                            [coupling_parameters[key], result], ignore_index=True
-                        )
-                    else:
-                        coupling_parameters[key] = result
 
     # Write coupling parameters to GDX
     logger.info("Writing coupling parameters to GDX file")

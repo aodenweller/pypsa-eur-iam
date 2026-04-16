@@ -68,8 +68,6 @@ localrules:
     purge,
     download_and_prepare,
     solve_all_networks,
-    solve_all_op_networks,
-    solve_all_perturbed_op_networks,
     export_to_REMIND
 
 wildcard_constraints:
@@ -439,70 +437,6 @@ rule solve_all_networks:
         ),
 
 
-rule solve_all_op_networks:
-    input:
-        # Require only the trigger file -> allow to fail without breaking the workflow
-        # The final check of which networks were solved successfully happens in export_to_REMIND
-        triggers=lambda wildcards: expand(
-            RESULTS
-            + "{scenario}/i{iteration}/y{year}/networks/base_s_{clusters}_elec_{opts}_op_trigger",
-            zip,
-            **pd.read_csv(
-                checkpoints.import_REMIND_config.get(
-                    scenario=wildcards["scenario"],
-                    iteration=wildcards["iteration"],
-                ).output["scenario_wildcards"],
-                na_filter=False,
-            ).to_dict(orient="list")
-        ),
-    output:
-        # Dummy file that can be called to provide wildcards and call the rule
-        # e.g. snakemake -s Snakefile_remind results/test/i1/solve_all_scenarios
-        trigger_all_op=touch(RESULTS + "{scenario}/i{iteration}/solve_all_op_networks")
-
-# Checkpoint that determines which technologies should be perturbed
-# The output is a CSV file that is read in solve_all_perturbed_op_networks
-# TODO: Include years wildcard here such that years that years don't all have to wait.
-checkpoint determine_perturbed_op_networks:
-    params:
-        remind_settings=config_provider("remind_coupling", "solve_perturbed_network")
-    input:
-        networks=rules.solve_all_networks.input["networks"],
-        scenario_wildcards=RESOURCES + "{scenario}/i{iteration}/scenario_wildcards.csv",
-        region_mapping="config/regionmapping_21_EU11.csv",
-        technology_cost_mapping="config/technology_cost_mapping.csv",
-    output:
-        scenario_wildcards_perturbed=RESOURCES + "{scenario}/i{iteration}/scenario_wildcards_perturbed.csv",
-    log:
-        LOGS + "{scenario}/i{iteration}/determine_perturbed_op_networks.log",
-    benchmark:
-        BENCHMARKS + "{scenario}/i{iteration}/determine_perturbed_op_networks"
-    localrule: True  # Checkpoints cannot be declared "local" with "localrules" statement on top, needs individual declaration as local
-    script:
-        "scripts/determine_perturbed_op_networks_REMIND.py"
-
-rule solve_all_perturbed_op_networks:
-    input:
-        # Require only the trigger file -> allow to fail without breaking the workflow
-        # The final check of which networks were solved successfully happens in export_to_REMIND
-        triggers=lambda wildcards: expand(
-            RESULTS
-            + "{scenario}/i{iteration}/y{year}/networks/base_s_{clusters}_elec_{opts}_op_perturb_{ptech}_trigger",
-            zip,
-            **pd.read_csv(
-                checkpoints.determine_perturbed_op_networks.get(
-                    scenario=wildcards["scenario"],
-                    iteration=wildcards["iteration"],
-                ).output["scenario_wildcards_perturbed"],
-                na_filter=False,
-            ).to_dict(orient="list")
-        ),
-    output:
-        # Dummy file that can be called to provide wildcards and call the rule
-        # e.g. snakemake -s Snakefile_remind results/test/i1/solve_all_scenarios
-        trigger_all_perturbed_op=touch(RESULTS + "{scenario}/i{iteration}/solve_all_perturbed_op_networks")
-
-
 # Export PyPSA-Eur results to REMIND as GDX and create additional reporting CSVs
 rule export_to_REMIND:
     params:
@@ -510,28 +444,6 @@ rule export_to_REMIND:
     input:
         # For standard capacity expansion, require all networks
         networks=rules.solve_all_networks.input["networks"],
-        # For operational networks, require only the dummy trigger file, this allows for missing files
-        trigger_all_op = (
-            rules.solve_all_op_networks.output["trigger_all_op"]
-            if config["remind_coupling"]["solve_operations_network"]["enable"]
-            else []
-        ),
-        triggers_op=(
-            rules.solve_all_op_networks.input["triggers"]
-            if config["remind_coupling"]["solve_operations_network"]["enable"]
-            else []
-        ),
-        # For perturbed networks, require only the dummy trigger file, this allows for missing files
-        trigger_all_perturbed_op = (
-            rules.solve_all_perturbed_op_networks.output["trigger_all_perturbed_op"]
-            if config["remind_coupling"]["solve_perturbed_network"]["enable"]
-            else []
-        ),
-        triggers_op_perturb=(
-            rules.solve_all_perturbed_op_networks.input["triggers"]
-            if config["remind_coupling"]["solve_perturbed_network"]["enable"]
-            else []
-        ),
         # Region and technology mappings
         region_mapping="config/regionmapping_21_EU11.csv",
         technology_cost_mapping="config/technology_cost_mapping.csv",

@@ -102,27 +102,3 @@ enable_resistive_dsm:
 set_electrolysis_min_load:
   remind_switch: c32_pypsa_cfg_min_load_elh2
   overwrite_pypsa: remind_coupling.hydrogen_storage.min_load_electrolysis
-
-# Calculate perturbed scenarios (to numerically determine partial derivative)
-enable_perturbed_scenarios:
-  remind_switch: c32_pypsa_cfg_perturb
-  overwrite_pypsa: remind_coupling.solve_perturbed_network.enable
-  switch_mapping:
-    0: false
-    1: true
-
-# If solving perturbed networks, also create default op network 
-enable_dispatch_networks_when_perturbed:
-  remind_switch: c32_pypsa_cfg_perturb
-  overwrite_pypsa: remind_coupling.solve_operations_network.enable
-  switch_mapping:
-    0: false
-    1: true
-
-# If solving perturbed networks, use default op network for export
-use_dispatch_networks_for_export:
-  remind_switch: c32_pypsa_cfg_perturb
-  overwrite_pypsa: remind_coupling.export_to_REMIND.use_operations_network
-  switch_mapping:
-    0: false
-    1: true
