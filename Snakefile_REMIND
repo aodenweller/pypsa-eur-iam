@@ -7,24 +7,28 @@ from pathlib import Path
 import yaml
 from os.path import normpath, exists, join
 from shutil import copyfile, move, rmtree
+from dotenv import load_dotenv
 from snakemake.utils import min_version
-import numpy as np
-import pandas as pd
+
+load_dotenv()
 
 min_version("8.11")
 
 from scripts._helpers import (
-    path_provider,
-    get_scenarios,
     get_rdir,
+    get_scenarios,
     get_shadow,
+    path_provider,
+    script_path_provider,
 )
+from scripts.lib.validation.config import validate_config
 
 # TODO: First load config.default.yaml, then config.remind.yaml
 # and change config.remind.yaml such that it only contains the changes
 configfile: "config/config.remind.yaml"
 configfile: "config/plotting.default.yaml"
 
+validate_config(config)
 
 run = config["run"]
 #scenarios = get_scenarios(run)
@@ -36,14 +40,12 @@ exclude_from_shared = run["shared_resources"]["exclude"]
 logs = path_provider("logs/", "", shared_resources, exclude_from_shared)
 benchmarks = path_provider("benchmarks/", "", shared_resources, exclude_from_shared)
 resources = path_provider("resources/", "", shared_resources, exclude_from_shared)
-
-cutout_dir = config["atlite"]["cutout_directory"]
+scripts = script_path_provider(Path(workflow.snakefile).parent)
 
 # REMIND coupling specific directories
 # Structure, e.g.: resources/{scenario}/i{iteration}/y{year}/
 RDIR = "{scenario}/"
 IDIR = "i{iteration}/"
-CDIR = Path(cutout_dir).joinpath("" if run["shared_cutouts"] else RDIR)
 
 LOGS = "logs/"
 SCENARIO_LOGS = LOGS + RDIR
@@ -66,36 +68,60 @@ ITERATION_RESULTS = SCENARIO_RESULTS + IDIR
 # Rules that are run locally, not via a SLURM job
 localrules:
     purge,
-    download_and_prepare,
-    solve_all_networks,
+    prepare_REMIND,
+    solve_all_networks_REMIND,
     export_to_REMIND
 
 wildcard_constraints:
     clusters="[0-9]+(m|c)?|all|adm",
     opts=r"[-+a-zA-Z0-9\.]*",
+    sector_opts=r"[-+a-zA-Z0-9\.\s]*",
+    planning_horizons=r"[0-9]{4}",
     year="2[01][0-9][05]",
     scenario=".*",
     iteration="[0-9]+",
 
 
 include: "rules/common.smk"
+
+
+# Data constants
+OSM_DATASET = dataset_version("osm")
+
 include: "rules/retrieve.smk"
-include: "rules/build_electricity_REMIND.smk"
-include: "rules/build_sector_REMIND.smk"
-include: "rules/solve_electricity_REMIND.smk"
+include: "rules/build_electricity.smk"
+include: "rules/build_sector.smk"
+#include: "rules/build_electricity_REMIND.smk"  # TODO: REMOVE
+#include: "rules/build_sector_REMIND.smk"  # TODO: REMOVE
+#include: "rules/solve_electricity_REMIND.smk"  # TODO: REMOVE
+
+# Specific REMIND coupling rules
+include: "rules/REMIND_coupling.smk"
 
 rule purge:
     run:
         import builtins
 
         do_purge = builtins.input(
-            "Do you really want to delete all generated resources, \nresults and docs (downloads are kept)? [y/N] "
+            "Do you really want to delete all generated files?\n"
+            "\t* resources\n"
+            "\t* results\n"
+            "\t* docs\n"
+            "Downloaded files are kept.\n"
+            "Delete all files in the folders above? [y/N] "
         )
         if do_purge == "y":
-            rmtree("resources/", ignore_errors=True)
-            rmtree("results/", ignore_errors=True)
+
+            # Remove the directories and recreate them with .gitkeep
+            for dir_path in ["resources/", "results/"]:
+                rmtree(dir_path, ignore_errors=True)
+                Path(dir_path).mkdir(parents=True, exist_ok=True)
+                (Path(dir_path) / ".gitkeep").touch()
+
             rmtree("doc/_build", ignore_errors=True)
-            print("Purging generated resources, results and docs. Downloads are kept.")
+            print(
+                "Purging all generated resources, results and docs. Downloads are kept."
+            )
         else:
             raise Exception(f"Input {do_purge}. Aborting purge.")
 
@@ -122,8 +148,6 @@ rule rulegraph:
         pdf=resources("dag_rulegraph.pdf"),
         png=resources("dag_rulegraph.png"),
         svg=resources("dag_rulegraph.svg"),
-    conda:
-        "envs/environment.yaml"
     shell:
         r"""
         # Generate DOT file using nested snakemake with the dumped final config
@@ -132,15 +156,16 @@ rule rulegraph:
 
         # Generate visualizations from the DOT file
         if [ -s {output.dot} ]; then
+
             echo "[Rule rulegraph] Generating PDF from DOT"
             dot -Tpdf -o {output.pdf} {output.dot} || {{ echo "Error: Failed to generate PDF. Is graphviz installed?" >&2; exit 1; }}
-            
+
             echo "[Rule rulegraph] Generating PNG from DOT"
             dot -Tpng -o {output.png} {output.dot} || {{ echo "Error: Failed to generate PNG. Is graphviz installed?" >&2; exit 1; }}
-            
+
             echo "[Rule rulegraph] Generating SVG from DOT"
             dot -Tsvg -o {output.svg} {output.dot} || {{ echo "Error: Failed to generate SVG. Is graphviz installed?" >&2; exit 1; }}
-            
+
             echo "[Rule rulegraph] Successfully generated all formats."
         else
             echo "[Rule rulegraph] Error: Failed to generate valid DOT content." >&2
@@ -160,8 +185,6 @@ rule filegraph:
         pdf=resources("dag_filegraph.pdf"),
         png=resources("dag_filegraph.png"),
         svg=resources("dag_filegraph.svg"),
-    conda:
-        "envs/environment.yaml"
     shell:
         r"""
         # Generate DOT file using nested snakemake with the dumped final config
@@ -172,13 +195,13 @@ rule filegraph:
         if [ -s {output.dot} ]; then
             echo "[Rule filegraph] Generating PDF from DOT"
             dot -Tpdf -o {output.pdf} {output.dot} || {{ echo "Error: Failed to generate PDF. Is graphviz installed?" >&2; exit 1; }}
-            
+
             echo "[Rule filegraph] Generating PNG from DOT"
             dot -Tpng -o {output.png} {output.dot} || {{ echo "Error: Failed to generate PNG. Is graphviz installed?" >&2; exit 1; }}
-            
+
             echo "[Rule filegraph] Generating SVG from DOT"
             dot -Tsvg -o {output.svg} {output.dot} || {{ echo "Error: Failed to generate SVG. Is graphviz installed?" >&2; exit 1; }}
-            
+
             echo "[Rule filegraph] Successfully generated all formats."
         else
             echo "[Rule filegraph] Error: Failed to generate valid DOT content." >&2
@@ -193,7 +216,7 @@ rule doc:
     output:
         directory("doc/_build"),
     shell:
-        "make -C doc html"
+        "pixi run build-docs {output} html"
 
 
 rule sync:
@@ -219,249 +242,3 @@ rule sync_dry:
         rsync -uvarh --no-g {params.cluster}/logs . -n || echo "No logs directory, skipping rsync"
         """
 
-
-# REMIND-specific rules
-
-# Retrieve powerplants beforehand instead of dynamically accessing it in the respective rule 
-rule retrieve_powerplants:
-    output:
-        "data/powerplants.csv",
-    log:
-        "logs/retrieve_powerplants.log",
-    resources:
-        mem_mb=5000,
-    retries: 2
-    conda:
-        "envs/environment.yaml"
-    script:
-        "scripts/retrieve_powerplants_REMIND.py"
-
-# Helper function to evaluate input functions in the config file.
-def evaluate_inputs(input_dict):
-    evaluated = {}
-    for k, v in input_dict.items():
-        if callable(v):
-            # Set dummy wildcards so that update_config_from_wildcards runs without errors
-            evaluated[k] = v({"iteration": 1, "year": 2025, "scenario": "default"})
-        else:
-            evaluated[k] = v
-    return evaluated
-
-# Rule which downloads and prepares all files which will not change
-# during REMIND <-> PyPSA-EUR coupled iterations and repeating runs.
-# * Use for downloading on e.g. login node with internet connection
-# * will create some load for around 30m to create renewable profiles
-# run with:
-# > snakemake -s Snakefile_REMIND download_and_prepare
-rule download_and_prepare:
-    message:
-        "Downloading and preparing all single-execution rules. "
-        "Running this rule requires an internet connection for downloading "
-        "datafiles for the model."
-    input:
-        # Retrieve cost data
-        expand(
-            "resources/costs_{year}.csv",
-            year=[2020, 2025, 2030, 2035, 2040, 2045, 2050],
-        ),
-        # Retrieve cutouts and create profiles
-        expand(
-            "resources/profile_{clusters}_{technology}.nc",
-            clusters=config["scenario"]["clusters"],
-            technology=["onwind", "offwind-ac", "offwind-dc", "solar"],
-        ),
-        # Hydro profile is calculated without clustering
-        "resources/profile_hydro.nc",
-        # Retrieve electricity demand data
-        rules.build_electricity_demand.output[0],
-        # Retrieve powerplants data
-        rules.retrieve_powerplants.output[0],
-        # Input data for add_electricity
-        expand(
-            "resources/regions_by_class_{clusters}_{technology}.geojson",
-            clusters=config["scenario"]["clusters"],
-            technology=["onwind", "offwind-ac", "offwind-dc", "solar"],
-        ),
-        unpack(input_conventional),  # TODO: Not sure what this is
-        expand(
-            resources("networks/base_s_{clusters}.nc"),
-            clusters=config["scenario"]["clusters"]
-        ),
-        expand(
-            resources("regions_onshore_base_s_{clusters}.geojson"),
-            clusters=config["scenario"]["clusters"]
-        ),
-        expand(
-            resources("busmap_base_s_{clusters}.csv"),
-            clusters=config["scenario"]["clusters"]
-        ),
-        # Input data for EVs
-        expand(
-            rules.build_transport_demand.output,
-            clusters=config["scenario"]["clusters"]
-        ),
-        # Input data for heating
-        expand(
-            rules.build_hourly_heat_demand.output,
-            clusters=config["scenario"]["clusters"]
-        ),
-        expand(
-            rules.build_cop_profiles_REMIND.output,
-            clusters=config["scenario"]["clusters"]
-        ),
-        expand(
-            rules.build_hourly_water_heat_demand_REMIND.output,
-            clusters=config["scenario"]["clusters"]
-        ),
-        # Input data for hydrogen storage
-        expand(
-            "resources/salt_cavern_potentials_s_{clusters}.csv",
-            clusters=config["scenario"]["clusters"]
-        )
-
-# This part contains all rules, which get data from REMIND between iterations.
-# PyPSA-EUR networks are solved between iterations via snakemake calls
-#
-# Some of the new rules have additional wildcards:
-# * {year}: Indicating the REMIND year for which the model is built
-# * {iteration}: Indicating the REMIND iteration for which the model is built
-
-# This rule need to be called first in a separate snakemake call.
-# Afterwards, use --configfile in the next snakemake call.
-# 1) Import REMIND config and change config.remind_scenario.yaml accordingly
-#    This enables changes to the config.yaml file, depending on REMIND switches
-# 2) Import CO2 prices from REMIND and create scenario_wildcards.csv
-#    This is used to give CO2 prices to PyPSA-Eur via wildcards and 
-#    also to determine in which years PyPSA-Eur should run
-# TODO: Change such that config.remind_scenario.yaml only contains the changes, not the whole file
-checkpoint import_REMIND_config:
-    input:
-        config_default="config/config.remind.yaml",
-        remind2config="config/remind2config.yaml",
-        remind_config=RESOURCES + "{scenario}/i{iteration}/REMIND2PyPSAEUR_config.gdx",
-        remind_data=SCENARIO_RESOURCES + "i{iteration}/REMIND2PyPSAEUR.gdx",
-        region_mapping="config/regionmapping_21_EU11.csv",
-    output:
-        config=RESOURCES + "{scenario}/i{iteration}/config.remind_scenario.yaml",
-        scenario_wildcards=RESOURCES + "{scenario}/i{iteration}/scenario_wildcards.csv",
-    log:
-        ITERATION_LOGS + "import_REMIND_config.log",
-    benchmark:
-        ITERATION_BENCHMARKS + "import_REMIND_config"
-    localrule: True  # Checkpoints cannot be declared "local" with "localrules" statement on top, needs individual declaration as local
-    script:
-        "scripts/import_REMIND_config.py"
-
-
-# Build cost data compatible with the original PyPSA-EUR cost data structure from technology-data
-# as part of the coupling with REMIND.
-# Since the cost data is used in multiple rules, the cost data is provided as a dedicated file
-# and not only overwritten in the network as part of the "remind_overwrite_elec_network" rule below.
-rule import_REMIND_costs:
-    input:
-        # no TD data for < 2020 and > 2050
-        original_costs=lambda w: f"resources/costs_{np.clip(int(w['year']), a_min=2020, a_max=2050)}.csv",
-        original_costs_2025="resources/costs_2025.csv",
-        original_costs_2030="resources/costs_2030.csv",
-        region_mapping="config/regionmapping_21_EU11.csv",
-        technology_cost_mapping="config/technology_cost_mapping.csv",
-        remind_data=SCENARIO_RESOURCES + "i{iteration}/REMIND2PyPSAEUR.gdx",
-    output:
-        costs=RESOURCES + "{scenario}/i{iteration}/y{year}/costs.csv",
-    log:
-        LOGS + "{scenario}/i{iteration}/y{year}/import_REMIND_costs.log",
-    benchmark:
-        BENCHMARKS + "{scenario}/i{iteration}/y{year}/import_REMIND_costs"
-    group:
-        "iy"
-    script:
-        "scripts/import_REMIND_costs.py"
-
-
-# Read in electricity demand data from REMIND and create a csv that contains the scaling factor
-# TODO: Remove year wildcard
-rule import_REMIND_load:
-    params:
-        sector_coupling=config_provider("remind_coupling","sector_coupling"),
-    input:
-        load_timeseries=RESOURCES + "electricity_demand.csv",
-        region_mapping="config/regionmapping_21_EU11.csv",
-        remind_data=SCENARIO_RESOURCES + "i{iteration}/REMIND2PyPSAEUR.gdx",
-    output:
-        load_scaling_factor=SCENARIO_RESOURCES + "i{iteration}/y{year}/load_scaling_factor.csv",
-        sectoral_load=SCENARIO_RESOURCES + "i{iteration}/y{year}/sectoral_load.csv",
-    log:
-        LOGS + "{scenario}/i{iteration}/y{year}/import_REMIND_load.log",
-    benchmark:
-        BENCHMARKS + "{scenario}/i{iteration}/y{year}/import_REMIND_load"
-    group:
-        "iy"
-    script:
-        "scripts/import_REMIND_load.py"
-
-
-# Build csv with min capacities for PyPSA-EUR based on installed capacities from REMIND.
-# Used as RCL (Region-Carrier-Limits) contraints in PyPSA-EUR.
-# TODO: Remove year wildcard
-rule import_REMIND_RCL_p_nom_limits:
-    input:
-        remind_data=SCENARIO_RESOURCES + "i{iteration}/REMIND2PyPSAEUR.gdx",
-        region_mapping="config/regionmapping_21_EU11.csv",
-        technology_cost_mapping="config/technology_cost_mapping.csv",
-    output:
-        RCL_p_nom_limits=SCENARIO_RESOURCES
-        + "i{iteration}/y{year}/RCL_p_nom_limits.csv",
-    log:
-        LOGS + "{scenario}/i{iteration}/y{year}/import_REMIND_RCL_p_nom_limits.log",
-    benchmark:
-        BENCHMARKS + "{scenario}/i{iteration}/y{year}/import_REMIND_RCL_p_nom_limits"
-    group:
-        "iy"
-    script:
-        "scripts/import_REMIND_RCL_p_nom_limits.py"
-
-
-rule solve_all_networks:
-    input:
-        networks=lambda wildcards: expand(
-            RESULTS
-            + "{scenario}/i{iteration}/y{year}/networks/base_s_{clusters}_elec_{opts}.nc",
-            zip,
-            **pd.read_csv(
-                checkpoints.import_REMIND_config.get(
-                    scenario=wildcards["scenario"],
-                    iteration=wildcards["iteration"],
-                ).output["scenario_wildcards"],
-                na_filter=False,
-            ).to_dict(orient="list")
-        ),
-
-
-# Export PyPSA-Eur results to REMIND as GDX and create additional reporting CSVs
-rule export_to_REMIND:
-    params:
-        remind_settings=config_provider("remind_coupling"),
-    input:
-        # For standard capacity expansion, require all networks
-        networks=rules.solve_all_networks.input["networks"],
-        # Region and technology mappings
-        region_mapping="config/regionmapping_21_EU11.csv",
-        technology_cost_mapping="config/technology_cost_mapping.csv",
-        # Provide gdx to downscale PyPSA results to REMIND technologies
-        remind_weights=ITERATION_RESOURCES + "REMIND2PyPSAEUR.gdx",
-    output:
-        # Main output file that is read by REMIND
-        gdx=ITERATION_RESULTS + "PyPSAEUR2REMIND.gdx",
-        # The coupling_parameters directory contains the exact same data as the gdx file as CSVs
-        coupling_parameters=directory(ITERATION_RESULTS + "coupling_parameters"),
-        # The reporting_parameters directory contains additional data for reporting as CSVs
-        reporting_parameters=directory(ITERATION_RESULTS + "reporting_parameters"),
-    log:
-        ITERATION_LOGS + "export_to_REMIND.log",
-    benchmark:
-        ITERATION_BENCHMARKS + "export_to_REMIND"
-    resources:
-        mem_mb=lambda wildcards, attempt: attempt * 30000,
-        walltime="00:10:00",
-    script:
-        "scripts/export_to_REMIND.py"

@@ -197,14 +197,14 @@ PHS,CO2 intensity,setting to reference value,0,tCO2/MWh_th,Process without direc
 PHS,efficiency,mapping generation weighted to reference REMIND-EU technology,hydro,,
 PHS,FOM,mapping to PyPSA-EUR default values,,,
 PHS,fuel,setting to reference value,0,USD/MWh,Dummy value to avoid PyPSA-EUR throwing an error
-PHS,investment,scaling original values based on reference PyPSA-EUR technology,hydro,,
+PHS,investment,mapping to PyPSA-EUR default values,,,
 PHS,lifetime,mapping to PyPSA-EUR default values,,,
 PHS,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
 ror,CO2 intensity,setting to reference value,0,tCO2/MWh_th,Process without direct emissions
 ror,efficiency,mapping generation weighted to reference REMIND-EU technology,hydro,,
 ror,FOM,mapping to PyPSA-EUR default values,,,
 ror,fuel,setting to reference value,0,USD/MWh,Dummy value to avoid PyPSA-EUR throwing an error
-ror,investment,scaling original values based on reference PyPSA-EUR technology,hydro,,
+ror,investment,mapping to PyPSA-EUR default values,,,
 ror,lifetime,mapping to PyPSA-EUR default values,,,
 ror,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
 solar,CO2 intensity,setting to reference value,0,tCO2/MWh_th,Process without direct emissions
