@@ -24,19 +24,19 @@ remind_coupling:
     stores: true
   # Hydrogen storage settings
   hydrogen_storage:
-    min_load_electrolysis: 0.1  # p_min_pu of electrolyser link
     hydrogen_underground_storage_locations:
       - onshore  # more than 50 km from sea
       - nearshore    # within 50 km of sea
-      # - offshore
   # Battery storage settings
   battery_storage:
-    min_fill_battery: 0.15  # e_min_pu of battery store
+    e_min_pu: 0.15  # Minimum battery charge
   # Sector coupling settings (hydrogen, EVs, etc.)
   sector_coupling:
-    # Add constant additional hydrogen load (for non-power sector use given by REMIND)
+    # Add baseline electrolytic hydrogen demand (non-power sector demand from REMIND)
     electrolysis:
       enable: true
+      p_min_pu: 0.1  # Minimum load of electrolyser at all times
+      ramp_limit: NaN  # ramp_limit_up and ramp_limit_down of electrolyser
     # Passenger electric vehicles based on PyPSA-Eur implementation
     EV_pass:
       enable: false

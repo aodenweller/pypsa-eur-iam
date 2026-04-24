@@ -110,6 +110,9 @@ hydrogen storage underground,fuel,setting to reference value,0,USD/MWh,Dummy val
 hydrogen storage underground,investment,mapping generation weighted to reference REMIND-EU technology,h2stor,,
 hydrogen storage underground,lifetime,mapping generation weighted to reference REMIND-EU technology,h2stor,,
 hydrogen storage underground,VOM,setting to reference value,0,USD/MWh,"No VOM for storage technologies"
+hydrogen storage tank type 1 including compressor,FOM,mapping to PyPSA-EUR default values,,,
+hydrogen storage tank type 1 including compressor,investment,mapping to PyPSA-EUR default values,,,
+hydrogen storage tank type 1 including compressor,lifetime,mapping to PyPSA-EUR default values,,,
 lignite,CO2 intensity,mapping generation weighted to reference REMIND-EU technology,"[igcc, igccc, pc, coalchp]",,
 lignite,efficiency,mapping generation weighted to reference REMIND-EU technology,"[igcc, igccc, pc, coalchp]",,
 lignite,FOM,mapping generation weighted to reference REMIND-EU technology,"[igcc, igccc, pc, coalchp]",,

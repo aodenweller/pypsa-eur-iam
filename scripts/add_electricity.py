@@ -77,7 +77,7 @@ STORE_LOOKUP = {
     "battery": {
         "store": "battery storage",
         "bicharger": "battery inverter",
-        "roundtrip_correction": 0.5,
+        "roundtrip_correction": 1,  # REMIND specific (temporary)
     },
     "home battery": {
         "store": "home battery storage",

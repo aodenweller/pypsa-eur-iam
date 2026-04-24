@@ -64,7 +64,7 @@ def fold_sector_into_ac(demand: pd.DataFrame, source_sector: str) -> pd.DataFram
     )
 
 
-def prepare_sectoral_load(snakemake: Any, year: int) -> pd.DataFrame:
+def prepare_sectoral_load(snakemake: Any, costs: pd.DataFrame, year: int) -> pd.DataFrame:
     """Load and aggregate REMIND sectoral demand according to sector-coupling config."""
     sectoral_load = pd.read_csv(snakemake.input.sectoral_load)
     sectoral_load = sectoral_load.query("year == @year").copy()
@@ -732,6 +732,120 @@ def attach_hydro_remind(
         )
 
 
+def attach_hydrogen_storage_remind(
+    n: pypsa.Network,
+    snakemake: Any,
+    costs: pd.DataFrame,
+) -> None:
+    """Attach REMIND hydrogen buses, storage, and conversion links."""
+    storage_settings = snakemake.params["h2_settings"]
+    electrolysis_settings = snakemake.params["sector_coupling"]["electrolysis"]
+
+    ac_buses = n.buses.query("carrier == 'AC'").index
+    if ac_buses.empty:
+        logger.info("No AC buses available for REMIND hydrogen infrastructure.")
+        return
+
+    n.add("Carrier", "H2")
+
+    h2_buses = pd.Index([f"{bus} H2" for bus in ac_buses])
+    n.add(
+        "Bus",
+        h2_buses,
+        location=ac_buses,
+        carrier="H2",
+        unit="MWh_H2",
+        x=n.buses.loc[ac_buses, "x"].values,
+        y=n.buses.loc[ac_buses, "y"].values,
+    )
+
+    h2_caverns = pd.read_csv(snakemake.input.h2_cavern, index_col=0)
+    enabled_types = [
+        cavern_type
+        for cavern_type in storage_settings["hydrogen_underground_storage_locations"]
+        if cavern_type in h2_caverns.columns
+    ]
+    if enabled_types:
+        h2_caverns = h2_caverns[enabled_types].sum(axis=1)
+        h2_caverns = h2_caverns[h2_caverns > 2]
+        h2_caverns = h2_caverns * 1e6
+        h2_caverns.clip(upper=1e9, inplace=True)
+    else:
+        h2_caverns = pd.Series(dtype=float)
+
+    h2_cavern_buses = pd.Index([])
+    if not h2_caverns.empty:
+        underground_capital_cost = costs.at["hydrogen storage underground", "capital_cost"]
+        underground_lifetime = costs.at["hydrogen storage underground", "lifetime"]
+        h2_cavern_buses = h2_caverns.index.intersection(ac_buses)
+
+        n.add(
+            "Store",
+            h2_cavern_buses.map(lambda bus: f"{bus} H2 Store"),
+            bus=h2_cavern_buses.map(lambda bus: f"{bus} H2"),
+            carrier="H2 Store",
+            e_nom_extendable=True,
+            e_nom_max=h2_caverns.reindex(h2_cavern_buses).values,
+            e_cyclic=True,
+            capital_cost=underground_capital_cost,
+            lifetime=underground_lifetime,
+        )
+
+    tank_tech = "hydrogen storage tank type 1 including compressor"
+    tank_buses = ac_buses.difference(h2_caverns.index)
+    if not tank_buses.empty:
+        n.add(
+            "Store",
+            tank_buses.map(lambda bus: f"{bus} H2 Store"),
+            bus=tank_buses.map(lambda bus: f"{bus} H2"),
+            carrier="H2 Store",
+            e_nom_extendable=True,
+            e_cyclic=True,
+            capital_cost=costs.at[tank_tech, "capital_cost"],
+            lifetime=costs.at[tank_tech, "lifetime"],
+        )
+
+    if electrolysis_settings.get("enable", True):
+        electrolysis_names = ac_buses.map(lambda bus: f"{bus} H2 Electrolysis")
+        ramp_limit = electrolysis_settings.get("ramp_limit", np.nan)
+        n.add(
+            "Link",
+            electrolysis_names,
+            bus0=ac_buses,
+            bus1=h2_buses,
+            carrier="H2 Electrolysis",
+            p_nom_extendable=True,
+            p_min_pu=electrolysis_settings.get("p_min_pu", 0.0),
+            efficiency=costs.at["electrolysis", "efficiency"],
+            capital_cost=costs.at["electrolysis", "capital_cost"],
+            marginal_cost=costs.at["electrolysis", "marginal_cost"],
+            lifetime=costs.at["electrolysis", "lifetime"],
+            ramp_limit_up=None if pd.isna(ramp_limit) else ramp_limit,
+            ramp_limit_down=None if pd.isna(ramp_limit) else ramp_limit,
+        )
+
+    fuel_cell_names = ac_buses.map(lambda bus: f"{bus} H2 Fuel Cell")
+    n.add(
+        "Link",
+        fuel_cell_names,
+        bus0=h2_buses,
+        bus1=ac_buses,
+        carrier="H2 Fuel Cell",
+        p_nom_extendable=True,
+        efficiency=costs.at["fuel cell", "efficiency"],
+        capital_cost=costs.at["fuel cell", "capital_cost"] * costs.at["fuel cell", "efficiency"],
+        marginal_cost=costs.at["fuel cell", "marginal_cost"],
+        lifetime=costs.at["fuel cell", "lifetime"],
+    )
+
+    logger.info(
+        "Attached REMIND hydrogen infrastructure to %s AC buses (%s cavern sites, %s tank sites).",
+        len(ac_buses),
+        len(h2_cavern_buses),
+        len(tank_buses),
+    )
+
+
 # %%
 
 if __name__ == "__main__":
@@ -778,7 +892,7 @@ if __name__ == "__main__":
     ppl = overwrite_ppl_efficiency_with_costs(ppl, costs)
 
     # REMIND specific
-    sectoral_load = prepare_sectoral_load(snakemake, year=year)
+    sectoral_load = prepare_sectoral_load(snakemake, costs, year=year)
     load_scaling_factor = calculate_load_scaling_factor(n, snakemake, sectoral_load)
     
     # Attach AC load, other loads are attached below
@@ -880,7 +994,23 @@ if __name__ == "__main__":
     attach_storageunits(
         n, costs, n.buses.index, extendable_carriers["StorageUnit"], max_hours
     )
-    attach_stores(n, costs, n.buses.index, extendable_carriers["Store"])
+    
+    # Exclude H2 from generic store attachment to use REMIND-specific hydrogen setup
+    store_carriers = [c for c in extendable_carriers["Store"] if c != "H2"]
+    attach_stores(n, costs, n.buses.index, store_carriers)
+    
+    # Apply REMIND-specific hydrogen storage and links BEFORE sector coupling
+    # (sector coupling needs H2 buses to attach hydrogen demand)
+    if "H2" in extendable_carriers["Store"]:
+        attach_hydrogen_storage_remind(n, snakemake, costs)
+    
+    # Apply battery e_min_pu constraint from REMIND configuration
+    battery_settings = snakemake.params.get("battery_settings", {})
+    if "e_min_pu" in battery_settings and "battery" in extendable_carriers["Store"]:
+        e_min_pu = battery_settings["e_min_pu"]
+        battery_mask = n.stores["carrier"] == "battery"
+        n.stores.loc[battery_mask, "e_min_pu"] = e_min_pu
+        logger.info(f"Applied REMIND battery e_min_pu constraint: {e_min_pu}")
 
     if params.electricity.get("estimate_battery_capacities", False):
         attach_existing_batteries(n, costs, ppl)
