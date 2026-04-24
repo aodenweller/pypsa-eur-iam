@@ -102,7 +102,7 @@ if __name__ == "__main__":
 
     configure_logging(snakemake)
 
-    year = int(snakemake.wildcards["year"])
+    year = int(snakemake.wildcards["year_REMIND"])
     ppl = pd.read_csv(snakemake.input["powerplants"], index_col=0)
     capacities = pd.read_csv(snakemake.input["capacities"])
 

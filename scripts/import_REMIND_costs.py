@@ -6,6 +6,7 @@ import pandas as pd
 import pypsa
 import yaml
 from _helpers import configure_logging, get_region_mapping, read_remind_data
+import scripts.process_cost_data as process_cost_data
 from scripts.process_cost_data import prepare_costs
 
 logger = logging.getLogger(__name__)
@@ -35,7 +36,7 @@ def load_technology_mapping(fp_mapping: str) -> pd.DataFrame:
 
 
 def extract_remind_parameter_data(snakemake, region_mapping: pd.DataFrame) -> pd.DataFrame:
-    year = str(snakemake.wildcards["year"])
+    year = str(snakemake.wildcards["year_REMIND"])
 
     costs = read_remind_data(
         file_path=snakemake.input["remind_data"],
@@ -136,7 +137,7 @@ def build_generation_weighted_overrides(
         "`couple to` == 'mapping generation weighted to reference REMIND-EU technology'"
     ).drop(columns=["unit"])
 
-    year = str(snakemake.wildcards["year"])
+    year = str(snakemake.wildcards["year_REMIND"])
     weights = pd.concat(
         [
             read_remind_data(
@@ -226,7 +227,7 @@ def build_set_value_overrides(technology_mapping: pd.DataFrame, mapping_file: st
 
 
 def add_discount_rate(snakemake, costs: pd.DataFrame) -> pd.DataFrame:
-    year = str(snakemake.wildcards["year"])
+    year = str(snakemake.wildcards["year_REMIND"])
     with_discount = costs.loc[costs["parameter"] == "discount rate", "technology"]
     no_discount = costs.loc[~costs["technology"].isin(with_discount)][["technology"]].drop_duplicates()
 
@@ -306,7 +307,7 @@ if __name__ == "__main__":
         )
 
     configure_logging(snakemake)
-    year = str(snakemake.wildcards["year"])
+    year = str(snakemake.wildcards["year_REMIND"])
     logger.info("Building REMIND-adjusted costs for year %s", year)
 
     region_mapping = load_region_mapping(snakemake.input["region_mapping"], snakemake.config["countries"])
@@ -348,13 +349,17 @@ if __name__ == "__main__":
 
     n = pypsa.Network(snakemake.input["network"])
     nyears = n.snapshot_weightings.generators.sum() / 8760.0
+    # `prepare_costs` currently resolves `snakemake` and `planning_horizon`
+    # from module-level globals in `scripts.process_cost_data`. We set them
+    # here to keep `process_cost_data.py` unchanged while calling it from REMIND.
+    process_cost_data.snakemake = snakemake
+    process_cost_data.planning_horizon = year
     costs_processed = prepare_costs(
         costs=merged_raw.set_index(["technology", "parameter"]),
         config=snakemake.params["costs"],
         max_hours=snakemake.params["max_hours"],
         nyears=nyears,
         custom_costs_fn=snakemake.input.get("custom_costs"),
-        planning_horizon=year,
     )
     costs_processed = costs_processed.loc[
         costs_processed.index.isin(mapped_technologies)

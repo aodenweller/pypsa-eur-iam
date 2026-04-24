@@ -67,7 +67,6 @@ ITERATION_RESULTS = SCENARIO_RESULTS + IDIR
 
 # Rules that are run locally, not via a SLURM job
 localrules:
-    purge,
     download_and_prepare_REMIND,
     solve_all_networks_REMIND,
     export_to_REMIND
@@ -88,9 +87,11 @@ include: "rules/common.smk"
 # Data constants
 OSM_DATASET = dataset_version("osm")
 
+
 include: "rules/retrieve.smk"
 include: "rules/build_electricity.smk"
 include: "rules/build_sector.smk"
+
 
 # Specific REMIND coupling rules
 include: "rules/REMIND_coupling.smk"
