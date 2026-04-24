@@ -23,8 +23,7 @@ from scripts._helpers import (
 )
 from scripts.lib.validation.config import validate_config
 
-# TODO: First load config.default.yaml, then config.remind.yaml
-# and change config.remind.yaml such that it only contains the changes
+configfile: "config/config.default.yaml"
 configfile: "config/config.remind.yaml"
 configfile: "config/plotting.default.yaml"
 
