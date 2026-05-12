@@ -21,31 +21,16 @@ rule download_and_prepare_REMIND:
 # * {year_REMIND}: REMIND year
 # * {iter_REMIND}: REMIND iteration
 
-# This rule need to be called first in a separate snakemake call.
-# Afterwards, use --configfile in the next snakemake call.
-# 1) Import REMIND config and change config.remind_scenario.yaml accordingly
-#    This enables changes to the config.yaml file, depending on REMIND switches
-# 2) Import REMIND-driven metadata used for scenario wildcards.
-#    CO2 prices are handled by a separate year-level pathway rule.
-# TODO: Change such that config.remind_scenario.yaml only contains the changes, not the whole file
-# TODO: Move this out of snakemake, get rid of the remind2config.yaml mapping
-checkpoint import_REMIND_config:
-    input:
-        config_default="config/config.remind.yaml",
-        remind2config="config/remind2config.yaml",
-        remind_config=RESOURCES + "{scen_REMIND}/i{iter_REMIND}/REMIND2PyPSAEUR_config.gdx",
-        remind_data=SCENARIO_RESOURCES + "i{iter_REMIND}/REMIND2PyPSAEUR.gdx",
-        region_mapping="config/regionmapping_21_EU11.csv",
-    output:
-        config=RESOURCES + "{scen_REMIND}/i{iter_REMIND}/config.remind_scenario.yaml",
-        scenario_wildcards=RESOURCES + "{scen_REMIND}/i{iter_REMIND}/scenario_wildcards.csv",
-    log:
-        ITERATION_LOGS + "import_REMIND_config.log",
-    benchmark:
-        ITERATION_BENCHMARKS + "import_REMIND_config"
-    localrule: True  # Checkpoints cannot be declared "local" with "localrules" statement on top, needs individual declaration as local
-    script:
-        "scripts/import_REMIND_config.py"
+# Before calling PyPSA-Eur the config file is created by import_REMIND_config.py
+#
+#   python scripts/import_REMIND_config.py \
+#       --gdx resources/{scen}/i{iter}/REMIND2PyPSAEUR.gdx \
+#       --config-changes-file config/config.remind_changes.yaml \
+#       --config-changes-overrides "key=value; ..." \
+#       --output resources/{scen}/i{iter}/config.remind_scenario.yaml
+#
+# Then invoke Snakemake with:
+#   snakemake -s Snakefile_REMIND --configfile resources/{scen}/i{iter}/config.remind_scenario.yaml ...
 
 # Input 1: Read demand data from REMIND and create a csv with the demand for each technology and region.
 rule import_REMIND_demand:
@@ -406,7 +391,7 @@ rule solve_all_networks_REMIND:
             iter_REMIND=[wildcards.iter_REMIND],  # Given by output path in export_to_REMIND
             clusters=config["scenario"]["clusters"],  # Given by config
             opts=[""],  # Empty because CO2 price is inserted in prepare_network_REMIND
-            year_REMIND=[2030, 2035, 2040, 2045, 2050],  # TODO: Update with import_config_REMIND
+            year_REMIND=config["remind_coupling"]["years"],  # set by import_REMIND_config.py via --configfile
         ),
     output:
         # Marker file to call rule and populate wildcards if needed
