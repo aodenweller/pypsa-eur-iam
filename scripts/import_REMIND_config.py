@@ -6,9 +6,10 @@ Must be run before invoking Snakemake.
 Usage:
     python scripts/import_REMIND_config.py \
         --gdx resources/{scen}/i{iter}/REMIND2PyPSAEUR.gdx \
+        --config-remind config/config.remind.yaml
         --config-changes-file config/config.remind_changes.yaml \
         --config-changes-overrides "remind_coupling.battery_storage_e_min_pu=0.2; remind_coupling.sector_coupling.enable_ev=true" \
-        --output resources/{scen}/i{iter}/config.remind_scenario.yaml
+        --output resources/{scen}/i{iter}/config.remind_scenario.yaml \
 """
 import argparse
 import logging
@@ -31,15 +32,30 @@ def set_nested_value(config, key_path, value):
     nested_dict[last_key] = value
 
 
-def apply_overrides(config, override_string):
+def has_nested_key(config: dict, key_path: str) -> bool:
+    """Return True if key_path (dot-separated) exists in config."""
+    d = config
+    for k in key_path.split("."):
+        if not isinstance(d, dict) or k not in d:
+            return False
+        d = d[k]
+    return True
+
+
+def apply_overrides(config, override_string, reference_config=None):
     """Apply semicolon-separated key=value overrides to config dict."""
     for part in override_string.split(";"):
         part = part.strip()
         if not part or "=" not in part:
             continue
         key, val = part.split("=", 1)
-        set_nested_value(config, key.strip(), yaml.safe_load(val.strip()))
-        logger.info("Applied override: %s = %s", key.strip(), val.strip())
+        key = key.strip()
+        if reference_config is not None and not has_nested_key(reference_config, key):
+            logger.warning(
+                "Override key '%s' not found in config.remind.yaml — possible typo?", key
+            )
+        set_nested_value(config, key, yaml.safe_load(val.strip()))
+        logger.info("Applied override: %s = %s", key, val.strip())
 
 
 def read_years(gdx_path):
@@ -64,6 +80,11 @@ def main():
         "--gdx", required=True, help="Path to REMIND2PyPSAEUR.gdx"
     )
     parser.add_argument(
+        "--config-remind",
+        default="config/config.remind.yaml",
+        help="Path to config.remind.yaml used to validate override keys (default: config/config.remind.yaml)",
+    )
+    parser.add_argument(
         "--config-changes-file",
         required=True,
         help="Path to the YAML changes file (e.g. config/config.remind_changes.yaml)",
@@ -82,11 +103,21 @@ def main():
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
+    reference_config = {}
+    remind_cfg_path = Path(args.config_remind)
+    if remind_cfg_path.exists():
+        with open(remind_cfg_path) as f:
+            reference_config = yaml.safe_load(f) or {}
+    else:
+        logger.warning(
+            "Reference config '%s' not found; skipping override key validation.", args.config_remind
+        )
+
     with open(args.config_changes_file) as f:
         config = yaml.safe_load(f) or {}
 
     if args.config_changes_overrides:
-        apply_overrides(config, args.config_changes_overrides)
+        apply_overrides(config, args.config_changes_overrides, reference_config=reference_config)
 
     years = read_years(args.gdx)
     set_nested_value(config, "remind_coupling.years", years)
