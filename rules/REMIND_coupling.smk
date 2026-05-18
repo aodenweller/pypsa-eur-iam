@@ -166,6 +166,7 @@ def _get_fleet_input(wildcards):
 
 # This is the main rule that brings all REMIND inputs together and creates the electricity network for the given scenario, iteration and year.
 # TODO: Revert to default add_electricity and use this rule to overwrite afterwards?
+# TODO: Make this call carrier_to_remind.yaml to name network components
 rule add_electricity_sector_REMIND:
     message:
         "Adding electricity and sector coupling to REMIND-coupled network"
@@ -248,8 +249,7 @@ rule add_electricity_sector_REMIND:
 
 # Helper function to read CO2 prices from CSV to feed into prepare_network_REMIND parameter without changing the script
 def _remind_emission_prices(wildcards, input):
-    co2_path = rules.import_REMIND_co2price.output.co2_price.format(**wildcards)
-    co2_prices = pd.read_csv(str(co2_path)).set_index("year")["co2_price"]
+    co2_prices = pd.read_csv(str(input.remind_co2_price)).set_index("year")["co2_price"]
     return {
         "enable": True,
         "dynamic": False,
@@ -278,6 +278,7 @@ rule prepare_network_REMIND:
     input:
         ITERATION_RESOURCES + "y{year_REMIND}/networks/base_s_{clusters}_elec.nc",
         costs=ITERATION_RESOURCES + "y{year_REMIND}/costs_processed.csv",  # REMIND specific
+        remind_co2_price=ITERATION_RESOURCES + "co2_price.csv",  # REMIND specific; triggers import_REMIND_co2price
         co2_price=lambda w: (
             resources("co2_price.csv")
             if config_provider("costs", "emission_prices", "dynamic")(w)
@@ -391,12 +392,11 @@ rule solve_all_networks_REMIND:
         ),
     output:
         # Marker file to call rule and populate wildcards if needed
-        # snakemake -s Snakefile_REMIND results/{scen_REMIND}/i{iter_REMIND}/y{year_REMIND}/solve_all_networks_REMIND.done
+        # snakemake -s Snakefile_REMIND results/{scen_REMIND}/i{iter_REMIND}/solve_all_networks_REMIND.done
         touch(ITERATION_RESULTS + "solve_all_networks_REMIND.done")
 
 
 # Export PyPSA-Eur results to REMIND as GDX and create additional reporting CSVs
-# TODO: Refactor completely
 rule export_to_REMIND:
     params:
         remind_settings=config_provider("remind_coupling"),
@@ -404,14 +404,13 @@ rule export_to_REMIND:
         networks=rules.solve_all_networks_REMIND.input["networks"],
         region_mapping="config/regionmapping_21_EU11.csv",
         technology_cost_mapping="config/technology_cost_mapping.csv",
-        # Provide gdx to downscale PyPSA results to REMIND technologies
-        remind_weights=ITERATION_RESOURCES + "REMIND2PyPSAEUR.gdx",
+        carrier_mapping="config/carrier_to_remind.yaml",
     output:
         # Main output file that is read by REMIND
         gdx=ITERATION_RESULTS + "PyPSAEUR2REMIND.gdx",
-        # The coupling_parameters directory contains the exact same data as the gdx file as CSVs
+        # coupling_parameters/ contains the same data as the GDX as CSVs
         coupling_parameters=directory(ITERATION_RESULTS + "coupling_parameters"),
-        # The reporting_parameters directory contains additional data for reporting as CSVs
+        # reporting_parameters/ contains additional diagnostics (not used by REMIND)
         reporting_parameters=directory(ITERATION_RESULTS + "reporting_parameters"),
     log:
         ITERATION_LOGS + "export_to_REMIND.log",
@@ -421,4 +420,4 @@ rule export_to_REMIND:
         mem_mb=lambda wildcards, attempt: attempt * 30000,
         walltime="00:10:00",
     script:
-        "scripts/export_to_REMIND.py"
+        scripts("export_to_REMIND_new.py")

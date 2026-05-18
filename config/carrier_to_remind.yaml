@@ -1,0 +1,53 @@
+# Maps PyPSA-Eur network carrier names to REMIND technology codes.
+# Used exclusively by export_to_REMIND.py (the export direction).
+# For cost parameters (import direction), see technology_cost_mapping.csv.
+#
+# Key distinction from technology_cost_mapping.csv:
+#   - CSV uses cost-database names (e.g. "electrolysis", "battery inverter")
+#   - This file uses actual PyPSA network carrier names (e.g. "H2 Electrolysis")
+#
+# Carriers absent from this file receive NaN and are silently excluded from
+# the REMIND export (e.g. DC links, EV chargers, heat pumps).
+
+generators:
+  solar: spv
+  onwind: windon
+  offwind-ac: windoff
+  offwind-dc: windoff      # DC-connected offshore wind also maps to windoff
+  ocgt: ngt
+  ccgt: ngcc
+  ccgt-ccs: ngccc
+  gas-chp: gaschp
+  nuclear: tnrs
+  nuclear-fast: fnrs
+  oil: dot
+  coal-pc: pc
+  coal-igcc: igcc
+  coal-igcc-ccs: igccc
+  coal-chp: coalchp
+  biomass-chp: biochp
+  biomass-igcc: bioigcc
+  biomass-igcc-ccs: bioigccc
+  hydro: hydro
+  ror: hydro               # shares REMIND "hydro" capacity target with hydro
+
+links:
+  H2 Electrolysis: elh2   # capital E: matches carrier in add_electricity_sector_REMIND.py
+  H2 Fuel Cell: h2turb    # capital F, C
+  battery charger: btin
+  battery discharger: btout
+
+stores:
+  battery: btstor
+  H2: h2stor               # carrier name used in both electricity-only and sector-coupled networks
+  H2 Store: h2stor         # capital S: used in add_electricity_sector_REMIND.py (sector-coupled)
+
+# Which link carriers belong to which demand sector.
+# Used by calculate_electricity_prices to disaggregate electricity prices.
+# Key = sector label (appears in GDX output); value = link carrier name in the network.
+sectors:
+  electrolysis: H2 Electrolysis
+  EV_pass: BEV pass charger
+  EV_freight: BEV freight charger
+  heatpump: heatpump
+  resistive: resistive
