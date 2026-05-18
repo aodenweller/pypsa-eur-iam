@@ -27,7 +27,7 @@ biomass-igcc,,,,fuel,REMIND,pebiolc,,
 biomass-igcc,,,,investment,REMIND,bioigcc,,
 biomass-igcc,,,,lifetime,REMIND,bioigcc,,
 biomass-igcc,,,,VOM,REMIND,bioigcc,,
-biomass-igcc-ccs,,,,CO2 intensity,REMIND,bioigccc,,
+biomass-igcc-ccs,,,,CO2 intensity,fixed,0,tCO2/MWh_th,"TODO: Carbon-negative in REMIND, but that makes PyPSA-Eur unbounded"
 biomass-igcc-ccs,,,,efficiency,REMIND,bioigccc,,
 biomass-igcc-ccs,,,,FOM,REMIND,bioigccc,,
 biomass-igcc-ccs,,,,fuel,REMIND,pebiolc,,
