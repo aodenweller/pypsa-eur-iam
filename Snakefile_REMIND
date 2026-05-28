@@ -31,14 +31,15 @@ validate_config(config)
 
 run = config["run"]
 #scenarios = get_scenarios(run)
-#RDIR = get_rdir(run)
+# RDIR is used for running PyPSA-Eur at different regional resolutions
+RDIR = get_rdir(run)
 shadow_config = get_shadow(run)
 
 shared_resources = run["shared_resources"]["policy"]
 exclude_from_shared = run["shared_resources"]["exclude"]
-logs = path_provider("logs/", "", shared_resources, exclude_from_shared)
-benchmarks = path_provider("benchmarks/", "", shared_resources, exclude_from_shared)
-resources = path_provider("resources/", "", shared_resources, exclude_from_shared)
+logs = path_provider("logs/", RDIR, shared_resources, exclude_from_shared)
+benchmarks = path_provider("benchmarks/", RDIR, shared_resources, exclude_from_shared)
+resources = path_provider("resources/", RDIR, shared_resources, exclude_from_shared)
 scripts = script_path_provider(Path(workflow.snakefile).parent)
 
 # The following new wildcards are introduced for the coupling:
@@ -48,25 +49,26 @@ scripts = script_path_provider(Path(workflow.snakefile).parent)
 
 # REMIND coupling specific directories
 # Structure, e.g.: resources/{scen_REMIND}/i{iter_REMIND}/y{year_REMIND}/
-RDIR = "{scen_REMIND}/"
+# SDIR = REMIND scenario directory (distinct from RDIR which is the PyPSA run-name dir set above)
+SDIR = "{scen_REMIND}/"
 IDIR = "i{iter_REMIND}/"
 
 LOGS = "logs/"
-SCENARIO_LOGS = LOGS + RDIR
+SCENARIO_LOGS = LOGS + SDIR
 ITERATION_LOGS = SCENARIO_LOGS + IDIR
 
 BENCHMARKS = "benchmarks/"
-SCENARIO_BENCHMARKS = BENCHMARKS + RDIR
+SCENARIO_BENCHMARKS = BENCHMARKS + SDIR
 ITERATION_BENCHMARKS = SCENARIO_BENCHMARKS + IDIR
 
 RESOURCES = "resources/" + (
-    "" if shared_resources else RDIR
+    "" if shared_resources else SDIR
 )
-SCENARIO_RESOURCES = "resources/" + RDIR
+SCENARIO_RESOURCES = "resources/" + SDIR
 ITERATION_RESOURCES = SCENARIO_RESOURCES + IDIR
 
 RESULTS = "results/"
-SCENARIO_RESULTS = RESULTS + RDIR
+SCENARIO_RESULTS = RESULTS + SDIR
 ITERATION_RESULTS = SCENARIO_RESULTS + IDIR
 
 # Rules that are run locally, not via a SLURM job

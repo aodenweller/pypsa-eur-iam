@@ -5,6 +5,22 @@
 # Additional rules required for REMIND coupling
 # Author: Adrian Odenweller (adrian.odenweller@pik-potsdam.de)
 
+rule retrieve_ssp_data:
+    params:
+        ssp_scenario=config_provider("remind_coupling", "demand_downscaling", "ssp_scenario"),
+        ssp_population_model=config_provider("remind_coupling", "demand_downscaling", "ssp_population_model"),
+        ssp_gdp_model=config_provider("remind_coupling", "demand_downscaling", "ssp_gdp_model"),
+    output:
+        population="data/ssp/population.csv",
+        gdp="data/ssp/gdp.csv",
+    log:
+        "logs/retrieve_ssp_data.log",
+    benchmark:
+        "benchmarks/retrieve_ssp_data"
+    script:
+        scripts("retrieve_ssp_data.py")
+
+
 # Download and prepare all files, which are independent of REMIND inputs and
 # requre internet connection on login nodes. Configure Gurobi before running.
 #   export GRB_LICENSE_FILE=/p/projects/rd3mod/gurobi.lic
@@ -15,7 +31,8 @@ rule download_and_prepare_REMIND:
         expand(
             rules.add_electricity.output[0],
             clusters=config["scenario"]["clusters"],
-        )
+        ),
+        rules.retrieve_ssp_data.output,
 
 # Before calling PyPSA-Eur the config file is created by import_REMIND_config.py
 #
@@ -42,6 +59,25 @@ rule import_REMIND_demand:
         ITERATION_BENCHMARKS + "import_REMIND_demand"
     script:
         scripts("import_REMIND_demand.py")
+
+
+# Input 1b: Disaggregate REMIND regional demand to country level using SSP population and GDP weights.
+rule downscale_REMIND_demand:
+    params:
+        sector_weights=config_provider("remind_coupling", "demand_downscaling", "sector_weights"),
+    input:
+        sectoral_load=ITERATION_RESOURCES + "sectoral_load.csv",
+        population="data/ssp/population.csv",
+        gdp="data/ssp/gdp.csv",
+        region_mapping="config/regionmapping_21_EU11.csv",
+    output:
+        sectoral_load_country=ITERATION_RESOURCES + "sectoral_load_country.csv",
+    log:
+        ITERATION_LOGS + "downscale_REMIND_demand.log",
+    benchmark:
+        ITERATION_BENCHMARKS + "downscale_REMIND_demand"
+    script:
+        scripts("downscale_REMIND_demand.py")
 
 
 # Input 2: Read capacity data from REMIND and create a csv with the installed capacities for each technology and region.
@@ -227,7 +263,7 @@ rule add_electricity_sector_REMIND:
         # REMIND input files
         region_mapping="config/regionmapping_21_EU11.csv",
         technology_cost_mapping="config/technology_cost_mapping.csv",
-        sectoral_load=ITERATION_RESOURCES + "sectoral_load.csv",
+        sectoral_load_country=ITERATION_RESOURCES + "sectoral_load_country.csv",
         hydro_targets=ITERATION_RESOURCES + "hydro_targets.csv",
         capacities=ITERATION_RESOURCES + "installed_capacities.csv",
         wh_share="data/REMIND_SSP2_wh_share.csv",  # REMIND share of water heating

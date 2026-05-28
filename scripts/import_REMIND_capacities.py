@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 
 """
 Read installed-capacity targets from REMIND and export them for use as lower bounds in PyPSA-Eur.
@@ -142,9 +141,9 @@ if __name__ == "__main__":
     if "snakemake" not in globals():
         snakemake = mock_snakemake(
             "import_REMIND_capacities",
-            scenario="TEST",
-            iteration="1",
-            configfiles="config/config.remind.yaml",
+            scen_REMIND="TEST_multiregion",
+            iter_REMIND="1",
+            configfiles="config/config.remind_multiregion.yaml",
         )
 
     configure_logging(snakemake)

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 
 """
 Build REMIND-adjusted technology costs for PyPSA-Eur.
@@ -22,15 +21,13 @@ import logging
 import pandas as pd
 import pypsa
 from _helpers import configure_logging, get_region_mapping, read_remind_data
-import scripts.process_cost_data as process_cost_data
-from scripts.process_cost_data import prepare_costs
 
 logger = logging.getLogger(__name__)
 
 
 def extract_remind_parameter_data(snakemake, mapped_regions: set[str]) -> pd.DataFrame:
     """Read all REMIND parameters needed for cost overrides and return a long-format DataFrame."""
-    year = str(snakemake.wildcards["year_REMIND"])
+    year = str(snakemake.wildcards["year_REMIND"])  # noqa: F841 — used via @year in .query()
 
     costs = read_remind_data(
         file_path=snakemake.input["remind_data"],
@@ -179,7 +176,7 @@ def build_set_value_overrides(technology_mapping: pd.DataFrame, mapping_file: st
 
 def add_discount_rate(snakemake, costs: pd.DataFrame) -> pd.DataFrame:
     """Append a discount rate row from REMIND for every technology not already carrying one."""
-    year = str(snakemake.wildcards["year_REMIND"])
+    year = str(snakemake.wildcards["year_REMIND"])  # noqa: F841 — used via @year in .query()
     with_discount = costs.loc[costs["parameter"] == "discount rate", "technology"]
     no_discount = costs.loc[~costs["technology"].isin(with_discount)][["technology"]].drop_duplicates()
 
@@ -206,7 +203,8 @@ def add_discount_rate(snakemake, costs: pd.DataFrame) -> pd.DataFrame:
 
 
 def convert_investment_to_input_capacity_basis(costs: pd.DataFrame) -> pd.DataFrame:
-    """REMIND investment costs are per kW of output capacity; PyPSA needs per kW of input (p_nom).
+    """
+    REMIND investment costs are per kW of output capacity; PyPSA needs per kW of input (p_nom).
 
     Converts by multiplying by efficiency (eta = output/input): cost_per_kW_in = cost_per_kW_out * eta.
 
@@ -260,15 +258,24 @@ def merge_overrides_into_baseline(
 
 
 if __name__ == "__main__":
+    import sys
+    from pathlib import Path
+    # When run directly, Python adds scripts/ to sys.path, not the repo root.
+    # scripts.process_cost_data must be imported as a package from the repo root,
+    # so we insert it explicitly. Not needed under Snakemake (which sets up sys.path correctly).
+    sys.path.insert(0, str(Path(__file__).parents[1]))
+    import scripts.process_cost_data as process_cost_data
+    from scripts.process_cost_data import prepare_costs
+
     if "snakemake" not in globals():
         from _helpers import mock_snakemake
 
         snakemake = mock_snakemake(
             "import_REMIND_costs",
-            scenario="TEST",
-            iteration="1",
-            year="2030",
-            configfiles="config/config.remind.yaml",
+            scen_REMIND="TEST_multiregion",
+            iter_REMIND="1",
+            year_REMIND="2030",
+            configfiles="config/config.remind_multiregion.yaml",
         )
 
     configure_logging(snakemake)

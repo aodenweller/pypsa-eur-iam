@@ -18,6 +18,7 @@ import pandas as pd
 import pypsa
 import xarray as xr
 
+from scripts._helpers import get_region_mapping
 from scripts.add_electricity import (
     add_co2_emissions,
     add_missing_carriers,
@@ -40,7 +41,6 @@ from scripts.add_electricity import (
     set_transmission_costs,
     update_p_nom_max,
 )
-from scripts._helpers import get_region_mapping
 from scripts.build_transport_demand import transport_degree_factor
 
 logger = logging.getLogger(__name__)
@@ -68,7 +68,7 @@ def fold_sector_into_ac(demand: pd.DataFrame, source_sector: str) -> pd.DataFram
 
 def prepare_sectoral_load(snakemake: Any, costs: pd.DataFrame, year: int) -> pd.DataFrame:
     """Load and aggregate REMIND sectoral demand according to sector-coupling config."""
-    sectoral_load = pd.read_csv(snakemake.input.sectoral_load)
+    sectoral_load = pd.read_csv(snakemake.input.sectoral_load_country)
     sectoral_load = sectoral_load.query("year == @year").copy()
 
     sector_coupling = snakemake.params["sector_coupling"]
@@ -98,16 +98,41 @@ def calculate_load_scaling_factor(
     snakemake: Any,
     sectoral_load: pd.DataFrame,
 ) -> pd.Series:
-    """Return a bus-aligned factor that scales the electricity load to REMIND AC demand."""
-    load = xr.open_dataarray(snakemake.input.load).to_dataframe().squeeze(axis=1).unstack(level="time")
-    
-    annual_load = load.sum().sum()
-    
-    scaling_factor = sectoral_load.query("sector == 'AC'")["value"].sum() / annual_load
+    """
+    Return a per-country Series (indexed by iso2) scaling AC load to REMIND demand.
 
-    # TODO: Enable different regions, using the csv file instead of the nc file
-    
-    return scaling_factor
+    sectoral_load must be at country level (iso2 codes as region column),
+    as produced by downscale_REMIND_demand. Call site maps the returned Series
+    to bus resolution via ``n.buses["country"].map(result)``.
+    """
+    remind_ac = (
+        sectoral_load.query("sector == 'AC'")
+        .set_index("region")["value"]
+    )
+
+    # Annual MWh per cluster bus: sum the hourly raw demand over time, then apply
+    # the busmap (OSM bus names → cluster buses), then aggregate to country level.
+    busmap = pd.read_csv(snakemake.input.busmap, index_col="name").squeeze()
+    country_load = (
+        xr.open_dataarray(snakemake.input.load)
+        .sum("time")
+        .to_pandas()
+        .groupby(busmap)
+        .sum()
+        .groupby(n.buses["country"])
+        .sum()
+    )
+
+    per_country = remind_ac / country_load
+
+    missing = per_country.index[per_country.isna()]
+    if not missing.empty:
+        logger.warning(
+            "No base load found for countries %s — their buses will get NaN scaling factor.",
+            list(missing),
+        )
+
+    return per_country
 
 
 
@@ -150,7 +175,8 @@ def _fleet_evs_by_node_from_rds(
     year: int,
     kind: str,
 ) -> pd.Series | None:
-    """Read BEV fleet sizes from an EDGE-T RDS file and distribute them to PyPSA nodes by REMIND region.
+    """
+    Read BEV fleet sizes from an EDGE-T RDS file and distribute them to PyPSA nodes by REMIND region.
 
     Returns None if the file is unavailable, missing required columns, or contains no data for the
     requested year and vehicle kind.
@@ -215,8 +241,10 @@ def attach_hydrogen_demand_remind(
     sectoral_load: pd.DataFrame,
     region_mapping_fn: str,
 ) -> None:
-    """Add a fixed H2 Load at each H2 bus, distributing the REMIND electrolysis demand
-    across buses within each region proportionally to the existing AC load."""
+    """
+    Add a fixed H2 Load at each H2 bus, distributing the REMIND electrolysis demand
+    across buses within each region proportionally to the existing AC load.
+    """
     h2_demand = (
         sectoral_load.query("sector == 'electrolysis'")
         .groupby("region", as_index=True)["value"]
@@ -290,7 +318,8 @@ def attach_ev_demand_remind(
     year: int,
     kind: str,
 ) -> None:
-    """Add EV electricity demand, charging links, and optional DSM stores for passenger or freight vehicles.
+    """
+    Add EV electricity demand, charging links, and optional DSM stores for passenger or freight vehicles.
 
     The REMIND annual electricity total for the sector is scaled by a transport time series
     (corrected for heating degree days) to get an hourly profile. Fleet size comes from
@@ -435,7 +464,8 @@ def attach_heat_demand_remind(
     kind: str,
     cop_profiles_fn: str | None = None,
 ) -> None:
-    """Add electric heat demand for heat pumps or resistive heaters, scaled to the REMIND annual total.
+    """
+    Add electric heat demand for heat pumps or resistive heaters, scaled to the REMIND annual total.
 
     Space and water heating are split using the warm-water share from the wh_share file.
     For heat pumps, the electricity profile is obtained by dividing the thermal profile by
@@ -927,11 +957,11 @@ if __name__ == "__main__":
 
         snakemake = mock_snakemake(
             "add_electricity_sector_REMIND",
-            scenario="TEST",
-            iteration="1",
-            year="2030",
+            scen_REMIND="TEST_multiregion",
+            iter_REMIND="1",
+            year_REMIND="2030",
             clusters=4,
-            configfiles="config/config.remind.yaml"
+            configfiles="config/config.remind_multiregion.yaml",
         )
 
     configure_logging(snakemake)  # pylint: disable=E0606
@@ -971,14 +1001,15 @@ if __name__ == "__main__":
 
     # REMIND specific
     sectoral_load = prepare_sectoral_load(snakemake, costs, year=year)
-    load_scaling_factor = calculate_load_scaling_factor(n, snakemake, sectoral_load)
-    
+    load_scaling_per_country = calculate_load_scaling_factor(n, snakemake, sectoral_load)
+    load_scaling_per_bus = n.buses["country"].map(load_scaling_per_country)
+
     # Attach AC load, other loads are attached below
     attach_load(
         n,
         snakemake.input.load,
         snakemake.input.busmap,
-        load_scaling_factor,
+        load_scaling_per_bus,
     )
 
     set_transmission_costs(
@@ -1030,7 +1061,7 @@ if __name__ == "__main__":
         unit_commitment=unit_commitment,
         fuel_price=fuel_price,
     )
-    
+
     attach_wind_and_solar(
         n,
         costs,
@@ -1082,16 +1113,16 @@ if __name__ == "__main__":
     attach_storageunits(
         n, costs, n.buses.index, extendable_carriers["StorageUnit"], max_hours
     )
-    
+
     # Exclude H2 from generic store attachment to use REMIND-specific hydrogen setup
     store_carriers = [c for c in extendable_carriers["Store"] if c != "H2"]
     attach_stores(n, costs, n.buses.index, store_carriers)
-    
+
     # Apply REMIND-specific hydrogen storage and links BEFORE sector coupling
     # (sector coupling needs H2 buses to attach hydrogen demand)
     if "H2" in extendable_carriers["Store"]:
         attach_hydrogen_storage_remind(n, snakemake, costs)
-    
+
     # Apply battery e_min_pu constraint from REMIND configuration
     battery_settings = snakemake.params.get("battery_settings", {})
     if "e_min_pu" in battery_settings and "battery" in extendable_carriers["Store"]:

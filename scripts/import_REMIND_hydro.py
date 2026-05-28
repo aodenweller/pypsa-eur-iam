@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 
 """
 Read REMIND hydro capacity and generation targets and export them for use in PyPSA-Eur.
@@ -30,9 +29,9 @@ if __name__ == "__main__":
     if "snakemake" not in globals():
         snakemake = mock_snakemake(
             "import_REMIND_hydro",
-            scenario="TEST",
-            iteration="1",
-            configfiles="config/config.remind.yaml",
+            scen_REMIND="TEST_multiregion",
+            iter_REMIND="1",
+            configfiles="config/config.remind_multiregion.yaml",
         )
 
     configure_logging(snakemake)

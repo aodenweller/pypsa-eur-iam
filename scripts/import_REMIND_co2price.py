@@ -1,10 +1,8 @@
-# -*- coding: utf-8 -*-
 
 """Import a year-level CO2 price pathway from REMIND."""
 
 import logging
 
-import pandas as pd
 from _helpers import configure_logging, get_region_mapping, read_remind_data
 
 logger = logging.getLogger(__name__)
@@ -16,9 +14,9 @@ if __name__ == "__main__":
 
         snakemake = mock_snakemake(
             "import_REMIND_co2price",
-            scenario="TEST",
-            iteration="1",
-            configfiles="config/config.remind.yaml",
+            scen_REMIND="TEST_multiregion",
+            iter_REMIND="1",
+            configfiles="config/config.remind_multiregion.yaml",
         )
 
     configure_logging(snakemake)
