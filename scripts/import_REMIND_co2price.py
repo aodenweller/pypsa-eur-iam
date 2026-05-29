@@ -14,9 +14,9 @@ if __name__ == "__main__":
 
         snakemake = mock_snakemake(
             "import_REMIND_co2price",
-            scen_REMIND="TEST_multiregion",
+            scen_REMIND="PkBudg1000_EU",
             iter_REMIND="1",
-            configfiles="config/config.remind_multiregion.yaml",
+            configfiles="config/config.remind_europe.yaml",
         )
 
     configure_logging(snakemake)
@@ -38,22 +38,16 @@ if __name__ == "__main__":
     # unit conversion from USD/tC to USD/tCO2
     co2_price["value"] *= 12 / (12 + 2 * 16)
 
-    try:
-        years_coupled = (
-            read_remind_data(
-                file_path=snakemake.input["remind_data"],
-                variable_name="tPy32",
-                rename_columns={"ttot": "year"},
-            )
-            .year.unique()
-            .tolist()
+    years_coupled = (
+        read_remind_data(
+            file_path=snakemake.input["remind_data"],
+            variable_name="t",
+            rename_columns={"ttot": "year"},
         )
-        logger.info("Read coupled years from tPy32 set in GDX.")
-    except KeyError:
-        years_coupled = snakemake.config["remind_coupling"]["years"]
-        logger.info(
-            "tPy32 not found in GDX — using years from config: %s", years_coupled
-        )
+        .year.unique()
+        .tolist()
+    )
+    logger.info("Read coupled years from t set in GDX.")
 
     # Calculate mean CO2 price across all regions overlapping between REMIND and PyPSA-EUR countries for each year
     # TODO: Implement regional prices in PyPSA!

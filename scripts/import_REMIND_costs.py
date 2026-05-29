@@ -193,28 +193,38 @@ def build_set_value_overrides(technology_mapping: pd.DataFrame, mapping_file: st
     return set_df
 
 
-def add_discount_rate(snakemake, costs: pd.DataFrame) -> pd.DataFrame:
+def add_discount_rate(snakemake, costs: pd.DataFrame, mapped_regions: set[str]) -> pd.DataFrame:
     """Append a discount rate row from REMIND for every technology not already carrying one."""
     year = str(snakemake.wildcards["year_REMIND"])  # noqa: F841 — used via @year in .query()
     with_discount = costs.loc[costs["parameter"] == "discount rate", "technology"]
     no_discount = costs.loc[~costs["technology"].isin(with_discount)][["technology"]].drop_duplicates()
 
-    discount_rate = read_remind_data(
+    p_r = read_remind_data(
         file_path=snakemake.input["remind_data"],
-        variable_name="p32_discountRate",
-        rename_columns={"ttot": "year"},
-    ).query("year == @year")
+        variable_name="p_r",
+        rename_columns={"ttot": "year", "all_regi": "region"},
+    ).query("year == @year and region in @mapped_regions")
 
-    if discount_rate.shape[0] != 1:
-        raise ValueError("Expected a single discount rate value from REMIND")
+    if p_r.empty:
+        raise ValueError(
+            f"No p_r interest rate found for year {year} and regions {mapped_regions}"
+        )
+
+    discount_rate_value = p_r["value"].mean()
+    logger.info(
+        "Using mean interest rate %.4f averaged over %d regions for year %s.",
+        discount_rate_value,
+        len(p_r),
+        year,
+    )
 
     dr = pd.Series(
         {
             "parameter": "discount rate",
-            "value": discount_rate["value"].item(),
+            "value": discount_rate_value,
             "unit": "p.u.",
             "source": "REMIND-EU",
-            "further description": "p32_discountRate",
+            "further description": "p_r",
         }
     ).to_frame().T
     dr = dr.merge(no_discount, how="cross")
@@ -322,7 +332,7 @@ if __name__ == "__main__":
     )
 
     overrides = pd.concat([mapped_overrides, pypsa_overrides, set_overrides], ignore_index=True)
-    overrides = add_discount_rate(snakemake, overrides)
+    overrides = add_discount_rate(snakemake, overrides, mapped_regions)
     overrides = convert_investment_to_input_capacity_basis(overrides)
 
     merged_raw = merge_overrides_into_baseline(baseline_raw, overrides)
