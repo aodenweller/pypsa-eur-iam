@@ -974,9 +974,11 @@ def get_region_mapping(
     )
     region_mapping = region_mapping[["pypsa-eur", "remind-eu"]]
 
-    # Append Kosovo to region mapping, not present in standard mapping and uses non-standard "KV" in PyPSA-EUR
+    # Append Kosovo to region mapping, not present in standard mapping.
+    # PyPSA-Eur uses "XK" for Kosovo (ISO 3166-1 alpha-2 unofficial); country_converter
+    # does not recognise it so it is absent from the CSV-derived mapping.
     logger.info(
-        "Manually adding Kosovo to region mapping (PyPSA-EUR: KV, REMIND-EU: part of NES region) ..."
+        "Manually adding Kosovo to region mapping (PyPSA-EUR: XK, REMIND-EU: part of NES region) ..."
     )
     region_mapping = pd.concat(
         [
@@ -984,7 +986,7 @@ def get_region_mapping(
             pd.DataFrame(
                 {
                     "remind-eu": "NES",
-                    "pypsa-eur": "KV",
+                    "pypsa-eur": "XK",
                 },
                 columns=["pypsa-eur", "remind-eu"],
                 index=[0],

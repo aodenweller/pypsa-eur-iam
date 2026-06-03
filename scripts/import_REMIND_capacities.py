@@ -31,6 +31,17 @@ LINK_TECHNOLOGIES_INPUT_CAPACITY = {"elh2", "h2turb", "btin", "elh2VRE", "h2turb
 # Merged before PyPSA-Eur mapping so the groupby().sum() aggregates them correctly.
 _VRE_TO_PRIMARY = {"elh2VRE": "elh2", "h2turbVRE": "h2turb"}
 
+# REMIND battery storage technologies (solar-coupled, onshore-wind-coupled, offshore-wind-coupled).
+# p32_capAvg for these techs needs exogenous scaling before being treated as battery charger capacity:
+# After scaling they are renamed to "btin" so map_to_pypsa_carriers groups them with any
+# conventional btin capacity and maps the sum to "battery inverter".
+# Applied *before* adjust_link_capacities_to_input so all btin rows are η-corrected consistently.
+_BATTERY_SCALING_FACTORS: dict[str, float] = {
+    "storspv": 4.0,
+    "storwindon": 1.2,
+    "storwindoff": 1.2,
+}
+
 
 def _merge_vre_technologies(capacities: pd.DataFrame) -> pd.DataFrame:
     """Rename VRE-coupled h2turb/elh2 variants to their primary REMIND technology names.
@@ -44,6 +55,28 @@ def _merge_vre_technologies(capacities: pd.DataFrame) -> pd.DataFrame:
     # Cast to str first to avoid CategoricalDtype replace silently no-oping
     tech = capacities["remind_technology"].astype(str)
     capacities["remind_technology"] = tech.map(lambda t: _VRE_TO_PRIMARY.get(t, t))
+    return capacities
+
+
+def _scale_and_merge_battery_technologies(capacities: pd.DataFrame) -> pd.DataFrame:
+    """Apply exogenous scaling factors to REMIND battery techs and rename them to btin.
+
+    storspv/storwindon/storwindoff are a fallback used only when btin is absent entirely.
+    If any non-zero btin row exists, the stor* rows are dropped; otherwise they are scaled
+    and renamed to btin so map_to_pypsa_carriers maps them to "battery inverter".
+
+    Called before adjust_link_capacities_to_input so all btin rows receive the same η
+    correction and can be summed consistently.
+    """
+    capacities = capacities.copy()
+    tech = capacities["remind_technology"].astype(str)
+    btin_available = ((tech == "btin") & (capacities["value"] > 0)).any()
+    is_stor = tech.isin(_BATTERY_SCALING_FACTORS)
+    if btin_available:
+        return capacities[~is_stor].copy()
+    scale = tech.map(_BATTERY_SCALING_FACTORS)
+    capacities.loc[scale.notna(), "value"] *= scale[scale.notna()]
+    capacities["remind_technology"] = tech.map(lambda t: "btin" if t in _BATTERY_SCALING_FACTORS else t)
     return capacities
 
 
@@ -173,6 +206,12 @@ if __name__ == "__main__":
 
     logger.info("Merging VRE-coupled technology variants (elh2VRE→elh2, h2turbVRE→h2turb)...")
     capacities = _merge_vre_technologies(capacities)
+
+    logger.info(
+        "Scaling and merging VRE-coupled battery technologies "
+        "(storspv×4, storwindon×1.2, storwindoff×1.2 → btin)..."
+    )
+    capacities = _scale_and_merge_battery_technologies(capacities)
 
     logger.info("Adjusting capacities for link technologies to input-capacity convention...")
     capacities = adjust_link_capacities_to_input(

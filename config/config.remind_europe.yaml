@@ -110,12 +110,11 @@ run:
     policy: false
 
 scenario:
-  # 26 countries across 9 REMIND-EU regions.
+  # 34 countries across 11 REMIND regions (9 EU + NEN + NES).
   # Minimum clusters = number of (country, sub_network) pairs, not countries.
-  # After network build + simplification the processed network has 31 distinct
-  # (country, sub_network) pairs (confirmed from cluster_network.py assertion).
+  # Needs re-confirming after adding NEN/NES countries (was 31 for the 26-country scope).
   clusters:
-    - 31
+    - 39
   year:
     - 2025
     - 2030
@@ -149,7 +148,7 @@ scenario:
     - 2130
     - 2150
 
-# Countries covered by all 9 REMIND-EU regions:
+# Countries covered by 11 REMIND regions (9 EU + NEN + NES):
 #   DEU: DE
 #   FRA: FR
 #   UKI: GB, IE  (GG/GI/IM/JE excluded: no PyPSA-Eur data)
@@ -159,33 +158,43 @@ scenario:
 #   ECS: BG, HR, HU, RO, SI
 #   ESC: GR, IT  (CY/MT excluded: not in PyPSA-Eur default dataset)
 #   ESW: ES, PT
+#   NEN: NO, CH  (IS/LI excluded: no PyPSA-Eur data)
+#   NES: AL, BA, ME, MK, RS, XK  (TR excluded: not in synthetic load dataset; AND/MCO/SMR/VAT excluded: micro-states)
 countries:
-  - DE   # DEU
-  - FR   # FRA
-  - GB   # UKI
-  - IE   # UKI
-  - DK   # ENC
-  - FI   # ENC
-  - SE   # ENC
-  - AT   # EWN
-  - BE   # EWN
-  - LU   # EWN
-  - NL   # EWN
-  - CZ   # ECE
-  - EE   # ECE
-  - LT   # ECE
-  - LV   # ECE
-  - PL   # ECE
-  - SK   # ECE
-  - BG   # ECS
-  - HR   # ECS
-  - HU   # ECS
-  - RO   # ECS
-  - SI   # ECS
-  - GR   # ESC
-  - IT   # ESC
-  - ES   # ESW
-  - PT   # ESW
+  - "DE"   # DEU
+  - "FR"   # FRA
+  - "GB"   # UKI
+  - "IE"   # UKI
+  - "DK"   # ENC
+  - "FI"   # ENC
+  - "SE"   # ENC
+  - "AT"   # EWN
+  - "BE"   # EWN
+  - "LU"   # EWN
+  - "NL"   # EWN
+  - "CZ"   # ECE
+  - "EE"   # ECE
+  - "LT"   # ECE
+  - "LV"   # ECE
+  - "PL"   # ECE
+  - "SK"   # ECE
+  - "BG"   # ECS
+  - "HR"   # ECS
+  - "HU"   # ECS
+  - "RO"   # ECS
+  - "SI"   # ECS
+  - "GR"   # ESC
+  - "IT"   # ESC
+  - "ES"   # ESW
+  - "PT"   # ESW
+  - "NO"   # NEN
+  - "CH"   # NEN
+  - "AL"   # NES
+  - "BA"   # NES
+  - "ME"   # NES
+  - "MK"   # NES
+  - "RS"   # NES
+  - "XK"   # NES
 
 electricity:
   # Additional technologies introduced to match REMIND
