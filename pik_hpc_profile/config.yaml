@@ -50,10 +50,10 @@ verbose: true
 
 # now define the resources
 default-resources:
-  partition: standard
-  qos: short
-  mem_mb: 1000
-  cores: 8
+  - partition=standard
+  - qos=short
+  - mem_mb=1000
+  - cores=8
 
 # set-resources:
 #   # Due to group-components aggregating mem_mb resources,
