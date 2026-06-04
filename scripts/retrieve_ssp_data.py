@@ -11,12 +11,10 @@ REMIND's time resolution — no interpolation is applied.
 
 API pagination
 --------------
-The IIASA API caps responses at 25 000 rows when queried without filters, silently
-truncating ~30 countries (GB, SE, CH, TR, …) that fall beyond the limit. The fix
-is to pass model and scenario as server-side filters in the request body, which
-reduces the response to ~3 000 rows. The API also returns a ``total`` count of
-matching rows; the script raises an error if ``total`` exceeds the received count
-so that any future truncation is detected immediately rather than silently.
+The IIASA API caps responses at 25 000 rows per request. Without pagination this
+silently truncates ~30 countries (GB, SE, CH, TR, …). The script pages through
+results using ``limit``/``offset`` query parameters until it receives a page
+smaller than the page size, indicating the last page.
 
 Outputs
 -------
@@ -35,37 +33,40 @@ logger = logging.getLogger(__name__)
 
 IIASA_URL = "https://ixmp4.ece.iiasa.ac.at/v1/ssp/iamc/datapoints/"
 IIASA_PARAMS = {"join_parameters": "true", "join_runs": "true", "table": "true"}
+_PAGE_SIZE = 20_000  # stay below the 25k hard cap
 
 
-def _fetch_variable(variable: str, model: str, scenario: str) -> pd.DataFrame:
-    """Download one IAMC variable filtered to model/scenario from the IIASA SSP platform.
+def _fetch_variable(variable: str) -> pd.DataFrame:
+    """Download one IAMC variable from the IIASA SSP platform, paging through all results."""
+    logger.info("Fetching '%s' from IIASA SSP API …", variable)
 
-    Filtering server-side keeps the response well below the 25 000-row API cap.
-    The ``total`` field in the response is checked against the received row count;
-    a RuntimeError is raised if they differ so truncation is never silent.
-    """
-    logger.info("Fetching '%s' (%s / %s) from IIASA SSP API …", variable, model, scenario)
-    resp = httpx.patch(
-        IIASA_URL,
-        params=IIASA_PARAMS,
-        json={
-            "variable": {"name": variable},
-            "run": {"model": {"name": model}, "scenario": {"name": scenario}},
-        },
-        timeout=120,
-    )
-    resp.raise_for_status()
-    payload = resp.json()["results"]
-    df = pd.DataFrame(payload["data"], columns=payload["columns"])
+    all_data = []
+    columns = None
+    offset = 0
 
-    total = payload.get("total")
-    if total is not None and total != len(df):
-        raise RuntimeError(
-            f"IIASA API returned {len(df)} of {total} total rows for '{variable}' "
-            f"({model} / {scenario}) — response was truncated. "
-            "Check API filter syntax or implement pagination."
+    while True:
+        resp = httpx.patch(
+            IIASA_URL,
+            params={**IIASA_PARAMS, "limit": _PAGE_SIZE, "offset": offset},
+            json={"variable": {"name": variable}},
+            timeout=120,
         )
-    logger.info("  received %d rows", len(df))
+        resp.raise_for_status()
+        payload = resp.json()["results"]
+
+        if columns is None:
+            columns = payload["columns"]
+
+        page = payload["data"]
+        all_data.extend(page)
+        offset += len(page)
+        logger.info("  page: %d rows (cumulative: %d)", len(page), offset)
+
+        if len(page) < _PAGE_SIZE:
+            break  # last or only page
+
+    df = pd.DataFrame(all_data, columns=columns)
+    logger.info("  total received: %d rows", len(df))
     return df
 
 
@@ -75,8 +76,10 @@ def _retrieve_variable(
     scenario: str,
     label: str,
 ) -> pd.DataFrame:
-    """Fetch variable for specific model/scenario, map regions to ISO-2."""
-    df = _fetch_variable(variable, model, scenario)
+    """Fetch variable, filter to model/scenario, map regions to ISO-2."""
+    df = _fetch_variable(variable)
+    df = df[(df["model"] == model) & (df["scenario"] == scenario)].copy()
+    logger.info("After filtering to %s / %s: %d rows", model, scenario, len(df))
 
     cc = coco.CountryConverter()
     df["iso2"] = cc.pandas_convert(

@@ -96,6 +96,16 @@ OSM_DATASET = dataset_version("osm")
 
 
 include: "rules/retrieve.smk"
+
+# All retrieve_* rules use the storage plugin: the HTTP download happens in the
+# main process (login node), and the rule body just copies from cache to output.
+# Mark them local to avoid submitting trivial copy jobs to SLURM.
+workflow.localrules(*(
+    r.name for r in workflow.rules
+    if r.name.startswith(("retrieve_", "download_"))
+    and r.name != "download_and_prepare_REMIND"
+))
+
 include: "rules/build_electricity.smk"
 include: "rules/build_sector.smk"
 
