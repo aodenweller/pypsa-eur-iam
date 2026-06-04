@@ -360,35 +360,12 @@ rule prepare_network_REMIND:
         scripts("prepare_network.py")
 
 
-# Setup ssh tunnel to login node if configured to run on PIK HPC
+# Whether the Gurobi SSH tunnel is configured (read by solve_network_with_tunnel_REMIND.py
+# via snakemake.config; kept here only for the cluster_network_REMIND shadow rule below)
 USE_GUROBI_TUNNEL_REMIND = config.get("solving", {}).get("gurobi_hpc_tunnel", {}).get(
     "use_tunnel", False
 )
-GUROBI_TUNNEL_READY_MARKER_REMIND = (
-    ITERATION_RESULTS
-    + "y{year_REMIND}/logs/solve_network/base_s_{clusters}_elec_{opts}_gurobi_tunnel_ready.txt"
-)
 
-if USE_GUROBI_TUNNEL_REMIND:
-    rule setup_gurobi_tunnel_REMIND:
-        message:
-            "Setting up Gurobi tunnel before solving {wildcards.clusters} clusters and {wildcards.opts} options"
-        output:
-            ready_marker=GUROBI_TUNNEL_READY_MARKER_REMIND,
-        log:
-            python=ITERATION_RESULTS
-            + "y{year_REMIND}/logs/solve_network/base_s_{clusters}_elec_{opts}_gurobi_tunnel_python.log",
-        benchmark:
-            ITERATION_RESULTS
-            + "y{year_REMIND}/benchmarks/solve_network/base_s_{clusters}_elec_{opts}_gurobi_tunnel",
-        threads: 1
-        group:
-            "iy"
-        resources:
-            mem_mb=500,
-            runtime=5,
-        script:
-            scripts("setup_gurobi_tunnel_REMIND.py")
 
 
 # Solve network for given scenario, iteration and year.
@@ -410,8 +387,6 @@ rule solve_network_REMIND:
         capacities=ITERATION_RESOURCES + "installed_capacities.csv",
         region_mapping="config/regionmapping_21_EU11.csv",
         technology_cost_mapping="config/technology_cost_mapping.csv",
-        # Optional marker to wait for Gurobi tunnel to be ready if configured
-        tunnel_ready=(GUROBI_TUNNEL_READY_MARKER_REMIND if USE_GUROBI_TUNNEL_REMIND else []),
     output:
         network=ITERATION_RESULTS + "y{year_REMIND}/networks/base_s_{clusters}_elec_{opts}.nc",
         config=ITERATION_RESULTS + "y{year_REMIND}/configs/config.base_s_{clusters}_elec_{opts}.yaml",
@@ -437,7 +412,7 @@ rule solve_network_REMIND:
     shadow:
         shadow_config
     script:
-        scripts("solve_network.py")
+        scripts("solve_network_with_tunnel_REMIND.py")
 
 
 # Expand rule to solve all networks across years.
