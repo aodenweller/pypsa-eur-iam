@@ -9,17 +9,16 @@ Country names returned by the API (English full names) are mapped to ISO-2 codes
 using the ``country_converter`` package. Data is at 5-year intervals matching
 REMIND's time resolution — no interpolation is applied.
 
-API pagination
---------------
-The IIASA API caps responses at 25 000 rows per request. Without pagination this
-silently truncates ~30 countries (GB, SE, CH, TR, …). The script pages through
-results using ``limit``/``offset`` query parameters until it receives a page
-smaller than the page size, indicating the last page.
+API endpoint
+------------
+Uses the IIASA ixmp4 ``/iamc/datapoints/tabulate`` PATCH endpoint with JSON
+filters. Pagination via ``limit``/``offset`` query parameters is supported but
+rarely needed (GDP|PPP and Population return well under 25 000 rows each).
 
 Outputs
 -------
 - ``population.csv``: columns [iso2, year, value] (population in millions)
-- ``gdp.csv``: columns [iso2, year, value] (GDP|PPP in billion USD 2005)
+- ``gdp.csv``: columns [iso2, year, value] (GDP|PPP in billion USD 2010)
 """
 
 import logging
@@ -31,41 +30,54 @@ from _helpers import configure_logging, mock_snakemake
 
 logger = logging.getLogger(__name__)
 
-IIASA_URL = "https://ixmp4.ece.iiasa.ac.at/v1/ssp/iamc/datapoints/"
-IIASA_PARAMS = {"join_parameters": "true", "join_runs": "true", "table": "true"}
-_PAGE_SIZE = 20_000  # stay below the 25k hard cap
+IIASA_URL = "https://ixmp4.ece.iiasa.ac.at/v1/ssp/iamc/datapoints/tabulate"
+_PAGE_SIZE = 20_000
 
 
-def _fetch_variable(variable: str) -> pd.DataFrame:
+def _fetch_variable(variable: str, model: str, scenario: str) -> pd.DataFrame:
     """Download one IAMC variable from the IIASA SSP platform, paging through all results."""
-    logger.info("Fetching '%s' from IIASA SSP API …", variable)
+    logger.info(
+        "Fetching '%s' (%s / %s) from IIASA SSP API …", variable, model, scenario
+    )
 
-    all_data = []
+    body = {
+        "join_parameters": True,
+        "join_runs": True,
+        "join_run_id": False,
+        "variable": {"name__like": variable},
+        "run": {"default_only": True},
+        "model": {"name__like": model},
+        "scenario": {"name__like": scenario},
+    }
+
+    all_rows = []
     columns = None
     offset = 0
 
     while True:
         resp = httpx.patch(
             IIASA_URL,
-            params={**IIASA_PARAMS, "limit": _PAGE_SIZE, "offset": offset},
-            json={"variable": {"name": variable}},
+            params={"limit": _PAGE_SIZE, "offset": offset},
+            json=body,
             timeout=120,
         )
         resp.raise_for_status()
-        payload = resp.json()["results"]
+        payload = resp.json()
 
+        results = payload["results"]
         if columns is None:
-            columns = payload["columns"]
+            columns = results["columns"]
 
-        page = payload["data"]
-        all_data.extend(page)
+        page = results["data"]
+        all_rows.extend(page)
         offset += len(page)
-        logger.info("  page: %d rows (cumulative: %d)", len(page), offset)
+        total = payload.get("total", "?")
+        logger.info("  page: %d rows (cumulative: %d / %s)", len(page), offset, total)
 
         if len(page) < _PAGE_SIZE:
-            break  # last or only page
+            break
 
-    df = pd.DataFrame(all_data, columns=columns)
+    df = pd.DataFrame(all_rows, columns=columns)
     logger.info("  total received: %d rows", len(df))
     return df
 
@@ -77,14 +89,11 @@ def _retrieve_variable(
     label: str,
 ) -> pd.DataFrame:
     """Fetch variable, filter to model/scenario, map regions to ISO-2."""
-    df = _fetch_variable(variable)
-    df = df[(df["model"] == model) & (df["scenario"] == scenario)].copy()
+    df = _fetch_variable(variable, model, scenario)
     logger.info("After filtering to %s / %s: %d rows", model, scenario, len(df))
 
     cc = coco.CountryConverter()
-    df["iso2"] = cc.pandas_convert(
-        pd.Series(df["region"]), to="ISO2", not_found=None
-    )
+    df["iso2"] = cc.pandas_convert(pd.Series(df["region"]), to="ISO2", not_found=None)
     n_before = len(df)
     df = df.dropna(subset=["iso2"])
     n_dropped = n_before - len(df)

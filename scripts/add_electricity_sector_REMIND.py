@@ -9,7 +9,6 @@ Design principle:
 - Reuse shared upstream assembly functions from scripts.add_electricity.
 - Add REMIND-specific components via additional functions.
 """
-# %%
 import logging
 from typing import Any
 
@@ -97,13 +96,7 @@ def calculate_load_scaling_factor(
     snakemake: Any,
     sectoral_load: pd.DataFrame,
 ) -> pd.Series:
-    """
-    Return a per-country Series (indexed by iso2) scaling AC load to REMIND demand.
-
-    sectoral_load must be at country level (iso2 codes as region column),
-    as produced by downscale_REMIND_demand. Call site maps the returned Series
-    to bus resolution via ``n.buses["country"].map(result)``.
-    """
+    """Return a per-country Series (indexed by iso2) scaling AC load to REMIND demand."""
     remind_ac = (
         sectoral_load.query("sector == 'AC'")
         .set_index("region")["value"]
@@ -123,13 +116,6 @@ def calculate_load_scaling_factor(
     )
 
     per_country = remind_ac / country_load
-
-    missing = per_country.index[per_country.isna()]
-    if not missing.empty:
-        logger.warning(
-            "No base load found for countries %s — their buses will get NaN scaling factor.",
-            list(missing),
-        )
 
     return per_country
 
@@ -174,12 +160,7 @@ def _fleet_evs_by_node_from_rds(
     year: int,
     kind: str,
 ) -> pd.Series | None:
-    """
-    Read BEV fleet sizes from an EDGE-T RDS file and distribute them to PyPSA nodes by REMIND region.
-
-    Returns None if the file is unavailable, missing required columns, or contains no data for the
-    requested year and vehicle kind.
-    """
+    """Read BEV fleet sizes from an EDGE-T RDS file and distribute to nodes by REMIND region; None if unavailable."""
     try:
         import pyreadr
     except ImportError as exc:
@@ -239,11 +220,7 @@ def attach_hydrogen_demand_remind(
     n: pypsa.Network,
     sectoral_load: pd.DataFrame,
 ) -> None:
-    """
-    Add a fixed H2 Load at each H2 bus, distributing the REMIND electrolysis demand
-    across buses within each country proportionally to the existing AC load.
-    """
-    # sectoral_load["region"] contains ISO-2 country codes (from sectoral_load_country.csv)
+    """Add a fixed H2 Load at each H2 bus, weighted by AC load within each country."""
     h2_demand = (
         sectoral_load.query("sector == 'electrolysis'")
         .groupby("region", as_index=True)["value"]
@@ -316,12 +293,10 @@ def attach_ev_demand_remind(
     kind: str,
 ) -> None:
     """
-    Add EV electricity demand, charging links, and optional DSM stores for passenger or freight vehicles.
+    Add EV demand, charging links, and optional DSM stores for passenger or freight vehicles.
 
-    The REMIND annual electricity total for the sector is scaled by a transport time series
-    (corrected for heating degree days) to get an hourly profile. Fleet size comes from
-    the EDGE-T RDS file if available, otherwise it is estimated from config parameters.
-    DSM components (charger link, battery store) are only added when dsm is enabled in config.
+    REMIND annual total is distributed to an hourly profile via transport demand scaled by
+    heating degree days. Fleet size uses EDGE-T RDS if available, else config-based estimate.
     """
     if kind not in ("pass", "freight"):
         raise ValueError("kind must be 'pass' or 'freight'")
@@ -357,11 +332,21 @@ def attach_ev_demand_remind(
     )
     transport = transport.mul(1 + dd, axis=0)
 
-    denom = transport.to_numpy().sum()
-    if denom <= 0:
-        logger.warning("EV transport profile sum is zero; skipping %s.", sector)
-        return
-    load_p_set = transport * (float(demand_mwh) / denom)
+    demand_by_country = (
+        sectoral_load.query("sector == @sector").set_index("region")["value"]
+    )
+    node_country = n.buses.loc[common_cols, "country"]
+    load_p_set = pd.DataFrame(0.0, index=n.snapshots, columns=common_cols)
+    for country, demand in demand_by_country.items():
+        cnodes = node_country[node_country == country].index.intersection(transport.columns)
+        if cnodes.empty:
+            logger.warning("No nodes for country %s in EV %s profile; skipping.", country, sector)
+            continue
+        country_sum = float(transport[cnodes].to_numpy().sum())
+        if country_sum <= 0:
+            logger.warning("EV %s transport profile sum zero for %s; skipping.", sector, country)
+            continue
+        load_p_set[cnodes] = transport[cnodes] * (demand / country_sum)
 
     transport_data = pd.read_csv(transport_data_fn, index_col=0)
     number_cars = transport_data["number cars"].reindex(common_cols).fillna(0.0)
@@ -464,16 +449,16 @@ def attach_heat_demand_remind(
     """
     Add electric heat demand for heat pumps or resistive heaters, scaled to the REMIND annual total.
 
-    Space and water heating are split using the warm-water share from the wh_share file.
-    For heat pumps, the electricity profile is obtained by dividing the thermal profile by
-    the hourly COP (rural air-source). Optionally adds a fixed-size thermal storage buffer
-    for DSM with E/P ratio from config.
+    Space/water split uses wh_share; heatpump electricity = thermal / hourly COP (rural air-source).
+    Optionally adds a fixed-size thermal storage buffer for DSM with E/P ratio from config.
     """
     if kind not in ("heatpump", "resistive"):
         raise ValueError("kind must be 'heatpump' or 'resistive'")
 
-    demand_mwh = sectoral_load.query("sector == @kind")["value"].sum()
-    if demand_mwh <= 0:
+    demand_by_country = (
+        sectoral_load.query("sector == @kind").set_index("region")["value"]
+    )
+    if demand_by_country.sum() <= 0:
         logger.info("No REMIND %s demand found; skipping.", kind)
         return
 
@@ -484,9 +469,6 @@ def attach_heat_demand_remind(
     item = "heat pumps" if kind == "heatpump" else "resistive heating"
     wh = wh[wh["item"] == item]
     water_share = float(wh["value"].iloc[0]) if not wh.empty else 0.2
-
-    elec_water = float(demand_mwh) * water_share
-    elec_space = float(demand_mwh) * (1.0 - water_share)
 
     space_ds = xr.open_dataset(hourly_heat_demand_fn)
     space_heat = (space_ds["residential space"] + space_ds["services space"]).to_pandas()
@@ -512,15 +494,19 @@ def attach_heat_demand_remind(
         space_heat = space_heat / cop
         water_heat = water_heat / cop
 
-    space_sum = float(space_heat.to_numpy().sum())
-    water_sum = float(water_heat.to_numpy().sum())
-    if space_sum <= 0 or water_sum <= 0:
-        logger.warning("Heat profile has zero sum; skipping %s.", kind)
-        return
-
-    space_heat = space_heat * (elec_space / space_sum)
-    water_heat = water_heat * (elec_water / water_sum)
-    total_elec_profile = space_heat + water_heat
+    node_country = n.buses.loc[spatial_nodes, "country"]
+    total_elec_profile = pd.DataFrame(0.0, index=n.snapshots, columns=spatial_nodes)
+    for country, demand in demand_by_country.items():
+        cnodes = node_country[node_country == country].index.intersection(space_heat.columns)
+        if cnodes.empty:
+            logger.warning("No nodes for country %s in %s profile; skipping.", country, kind)
+            continue
+        space_sum = float(space_heat[cnodes].to_numpy().sum())
+        water_sum = float(water_heat[cnodes].to_numpy().sum())
+        if space_sum > 0:
+            total_elec_profile[cnodes] += space_heat[cnodes] * (demand * (1.0 - water_share) / space_sum)
+        if water_sum > 0:
+            total_elec_profile[cnodes] += water_heat[cnodes] * (demand * water_share / water_sum)
 
     carrier = f"{kind} electricity"
     heat_nodes = spatial_nodes + f" {carrier}"
@@ -595,7 +581,7 @@ def attach_heat_demand_remind(
             float(pd.Series(size_store).sum()),
         )
 
-    logger.info("Attached REMIND %s demand (%.2f MWh).", kind, float(demand_mwh))
+    logger.info("Attached REMIND %s demand (%.2f MWh).", kind, float(demand_by_country.sum()))
 
 
 def _to_scalar_region(value: Any) -> str | float:
@@ -621,12 +607,8 @@ def attach_hydro_remind(
     **params,
 ) -> None:
     """
-    Attach hydro close to upstream attach_hydro, with REMIND regional scaling.
-
-    The function keeps the upstream hydro implementation flow and only injects
-    two REMIND-specific corrections based on preprocessed targets:
-    1) scale ror/hydro capacities by REMIND region, and
-    2) scale hydro inflow energy by REMIND region.
+    Attach hydro following the upstream attach_hydro flow, with two REMIND-specific injections:
+    scale ror/hydro capacities by REMIND region and scale inflow energy by REMIND region.
     """
     add_missing_carriers(n, carriers)
     add_co2_emissions(n, costs, carriers)
@@ -953,15 +935,10 @@ def apply_regional_costs(
     country_to_region: pd.Series,
 ) -> None:
     """
-    Override capital_cost and marginal_cost per network component using REMIND regional values.
+    Override capital_cost and marginal_cost per component using REMIND regional values.
 
-    Called after all components have been added with region-averaged costs.  For each
-    component the function looks up the REMIND region of its bus, retrieves the
-    region-specific capital_cost and marginal_cost from *costs_regional*, and writes
-    those values back to the component DataFrames in place.
-
-    Additionally adds the regional CO₂ cost contribution to generator marginal costs,
-    replacing the global CO₂ cost that would otherwise be applied by prepare_network.py.
+    Also adds the regional CO₂ cost to generator/storage marginal costs, replacing the
+    global add_emission_prices() call that prepare_network.py would otherwise make.
     """
     def _apply_costs(df: pd.DataFrame, bus_col: str) -> None:
         if df.empty:
@@ -1008,8 +985,6 @@ def apply_regional_costs(
 
     logger.info("Applied regional REMIND costs to all network components.")
 
-
-# %%
 
 if __name__ == "__main__":
     if "snakemake" not in globals():
