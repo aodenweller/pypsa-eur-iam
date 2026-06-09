@@ -1,15 +1,9 @@
-
 """
 Read REMIND hydro capacity and generation targets and export them for use in PyPSA-Eur.
 
 Reads ``p32_hydroCapacity`` (TW -> MW) and ``p32_hydroGeneration`` (TWa -> MWh/year)
 from the REMIND GDX file, merges them, derives a capacity factor, and filters to
 REMIND regions that overlap with the configured PyPSA-Eur countries.
-
-Outputs
--------
-- ``hydro_targets.csv``: table with columns year, region, hydro_capacity_mw,
-  hydro_generation_mwh, hydro_capacity_factor.
 """
 
 import logging

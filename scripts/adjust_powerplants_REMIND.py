@@ -1,19 +1,11 @@
-# -*- coding: utf-8 -*-
-
 """
 Align the powerplantmatching database with REMIND capacity targets before the network build.
 
 Assigns a REMIND-compatible carrier name to each plant using the technology mapping CSV,
-filters out plants that are not yet built or already decommissioned in the target year,
-computes per-(REMIND region, carrier) scaling factors to reduce aggregate PyPSA-Eur
-capacity to the REMIND target wherever PyPSA-Eur exceeds it, and overwrites each
-plant's Fueltype field with the carrier name so that downstream scripts receive
-consistent carrier labels.
-
-Outputs
--------
-- ``powerplants_adjusted.csv``: modified powerplants table with scaled capacities and
-  REMIND carrier names written into the Fueltype column.
+filters out plants not yet built or already decommissioned in the target year, computes
+per-(REMIND region, carrier) scaling factors to reduce aggregate PyPSA-Eur capacity to
+the REMIND target wherever PyPSA-Eur exceeds it, and overwrites each plant's Fueltype
+with the carrier name so that downstream scripts receive consistent carrier labels.
 """
 
 import logging
@@ -25,7 +17,8 @@ logger = logging.getLogger(__name__)
 
 
 def assign_carriers_from_mapping(ppl: pd.DataFrame, fp_mapping: str) -> pd.Series:
-    """Assign a carrier name to each powerplant row using ppm_ columns in the mapping CSV.
+    """
+    Assign a carrier name to each powerplant row using ppm_ columns in the mapping CSV.
 
     Matching is applied in specificity order so that more-specific rules take
     precedence over broader ones:

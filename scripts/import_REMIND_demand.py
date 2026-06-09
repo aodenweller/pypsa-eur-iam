@@ -1,4 +1,3 @@
-
 """
 Read sectoral electricity demand from REMIND and export it for use in PyPSA-Eur.
 
@@ -6,10 +5,6 @@ Reads the REMIND variable ``v32_load_sector`` (unit: TWa), with fallback to the
 parameter ``p32_load_sector`` when the variable is unavailable (e.g. in fix runs).
 Converts to annual MWh per (year, region, sector) and filters to REMIND regions that
 overlap with the configured PyPSA-Eur countries.
-
-Outputs
--------
-- ``sectoral_load.csv``: long-format table with columns year, region, sector, value (MWh_el).
 """
 
 import logging

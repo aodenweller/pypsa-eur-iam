@@ -1,15 +1,9 @@
-
 """
 Read installed-capacity targets from REMIND and export them for use as lower bounds in PyPSA-Eur.
 
-Reads the REMIND variable ``p32_capAvg`` (unit: TW -> converted to MW), adjusts
-link-like technologies (electrolysis, fuel cell, battery inverter) from output-capacity
-to input-capacity convention by dividing by efficiency, maps REMIND technology names to
+Reads ``p32_capAvg`` (TW → MW), adjusts link-like technologies from output- to
+input-capacity convention by dividing by efficiency, maps REMIND technology names to
 PyPSA-Eur carrier names via the technology mapping CSV, and filters to configured regions.
-
-Outputs
--------
-- ``capacities.csv``: table with columns year, region_REMIND, carrier, p_nom_min (MW).
 """
 
 import logging
@@ -44,13 +38,7 @@ _BATTERY_SCALING_FACTORS: dict[str, float] = {
 
 
 def _merge_vre_technologies(capacities: pd.DataFrame) -> pd.DataFrame:
-    """Rename VRE-coupled h2turb/elh2 variants to their primary REMIND technology names.
-
-    REMIND splits electrolysis and H2 turbines into a base tech (elh2, h2turb) and a
-    VRE-coupled variant (elh2VRE, h2turbVRE). Both represent the same PyPSA-Eur carrier
-    and must be summed for the capacity constraint. Renaming before map_to_pypsa_carriers
-    lets the existing groupby().sum() aggregate them naturally.
-    """
+    """Rename elh2VRE→elh2 and h2turbVRE→h2turb so groupby().sum() aggregates them naturally."""
     capacities = capacities.copy()
     # Cast to str first to avoid CategoricalDtype replace silently no-oping
     tech = capacities["remind_technology"].astype(str)
@@ -59,14 +47,10 @@ def _merge_vre_technologies(capacities: pd.DataFrame) -> pd.DataFrame:
 
 
 def _scale_and_merge_battery_technologies(capacities: pd.DataFrame) -> pd.DataFrame:
-    """Apply exogenous scaling factors to REMIND battery techs and rename them to btin.
+    """
+    Scale storspv/storwindon/storwindoff and rename them to btin as a fallback when btin is absent.
 
-    storspv/storwindon/storwindoff are a fallback used only when btin is absent entirely.
-    If any non-zero btin row exists, the stor* rows are dropped; otherwise they are scaled
-    and renamed to btin so map_to_pypsa_carriers maps them to "battery inverter".
-
-    Called before adjust_link_capacities_to_input so all btin rows receive the same η
-    correction and can be summed consistently.
+    Must run before adjust_link_capacities_to_input so all btin rows receive the same η correction.
     """
     capacities = capacities.copy()
     tech = capacities["remind_technology"].astype(str)

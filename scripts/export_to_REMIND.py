@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Export PyPSA-Eur optimisation results back to REMIND.
 
@@ -22,9 +21,8 @@ import numpy as np
 import pandas as pd
 import pypsa
 import yaml
-from scipy.stats import zscore
-
 from _helpers import configure_logging, get_region_mapping
+from scipy.stats import zscore
 
 logger = logging.getLogger(__name__)
 
@@ -120,18 +118,7 @@ GDX_PARAMS = {
 
 
 def load_mappings(snakemake):
-    """
-    Load carrier-to-REMIND mapping and country-to-region mapping from config files.
-
-    Returns
-    -------
-    map_to_remind : dict
-        {network_carrier: remind_code} for generators, links, and stores.
-    sector_carriers : dict
-        {sector_label: link_carrier} for sectoral electricity price calculation.
-    region_mapping : dict
-        {pypsa_country_code: remind_region} (flat, one region per country).
-    """
+    """Load carrier→REMIND and country→region mappings; return (map_to_remind, sector_carriers, region_mapping)."""
     with open(snakemake.input["carrier_mapping"]) as f:
         cfg = yaml.safe_load(f)
 
@@ -245,18 +232,9 @@ def calculate_electricity_prices(n, sector_carriers, z_cutoff, hourly=False):
     """
     Load-weighted average electricity price per REMIND region and sector.
 
-    Returns a DataFrame with columns [region, sector, value].
-    Sector "total" is the load-weighted average across all sectors combined.
-
-    Parameters
-    ----------
-    sector_carriers : dict
-        {sector_label: link_carrier_name}, from carrier_to_remind.yaml.
-    z_cutoff : float or False
-        Z-score threshold above which to exclude scarcity-price snapshots.
-    hourly : bool
-        If True, return a (T x 1) DataFrame of network-wide hourly average
-        prices instead of the per-region, per-sector summary.
+    Returns columns [region, sector, value]; sector "total" is the network-wide average.
+    ``z_cutoff`` excludes scarcity-price snapshots above that z-score threshold.
+    Set ``hourly=True`` for a (T×1) network-wide hourly price series instead.
     """
     n_calc = cutoff_scarcity_prices(n, z_cutoff) if z_cutoff else n
 
@@ -342,12 +320,7 @@ def calculate_potentials(n):
 
 
 def calculate_generation_shares(n):
-    """
-    Share of each REMIND technology in total annual generator supply.
-
-    With 1:1 carrier mapping each carrier already maps to a unique REMIND
-    technology, so no weighting step is needed.
-    """
+    """Share of each REMIND technology in total annual generator supply."""
     supply = n.statistics.supply(
         comps=["Generator"], groupby=["region", "remind_carrier"]
     )
@@ -357,15 +330,7 @@ def calculate_generation_shares(n):
 
 
 def calculate_markups_supply(n, avg_prices_by_region, z_cutoff):
-    """
-    Supply-side markup = market value minus average electricity price.
-
-    Parameters
-    ----------
-    avg_prices_by_region : dict
-        {region: average_electricity_price} extracted from
-        ``calculate_electricity_prices``.
-    """
+    """Supply-side markup = market value minus average electricity price per region."""
     n_calc = cutoff_scarcity_prices(n, z_cutoff) if z_cutoff else n
     mv = n_calc.statistics.market_value(
         comps=["Generator"], groupby=["region", "remind_carrier"]
@@ -385,14 +350,7 @@ def calculate_market_values(n, z_cutoff):
 
 
 def calculate_markups_demand(electricity_prices):
-    """
-    Demand-side markup = sector electricity price minus average electricity price.
-
-    Parameters
-    ----------
-    electricity_prices : pd.DataFrame
-        Output of ``calculate_electricity_prices`` with a ``"sector"`` column.
-    """
+    """Demand-side markup = sector electricity price minus average electricity price."""
     avg = (
         electricity_prices.query("sector == 'total'")
         .set_index("region")["value"]
@@ -450,16 +408,7 @@ def calculate_peak_residual_loads(n, kind):
 
 
 def calculate_link_generation(n, carrier, kind):
-    """
-    Absolute [MWh] or relative generation of links with a given carrier.
-
-    Parameters
-    ----------
-    carrier : str
-        Network link carrier name (e.g. ``"H2 Fuel Cell"``).
-    kind : str
-        ``"absolute"`` or ``"relative"`` (fraction of total network load).
-    """
+    """Absolute [MWh] or relative generation of links with a given carrier (kind: 'absolute'|'relative')."""
     regions = sorted(n.buses["region"].dropna().unique())
     if not (n.links.carrier == carrier).any():
         return pd.DataFrame({"region": regions, kind: 0.0})
