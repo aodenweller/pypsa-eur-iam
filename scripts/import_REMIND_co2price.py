@@ -1,14 +1,16 @@
-"""Import a year-level CO2 price pathway from REMIND, per REMIND region."""
+"""Import a year-level CO2 price pathway from REMIND, per REMIND region.
+
+Thin wrapper over rpycpl: reads the CO2-price symbol (resolved from the central symbol
+config), converts tC->tCO2, filters to mapped REMIND regions and reindexes to the coupled
+years (missing filled with 0). Output identical to the previous standalone implementation.
+"""
 
 import logging
 
-import pandas as pd
-from _helpers import (
-    configure_logging,
-    get_region_mapping,
-    mock_snakemake,
-    read_remind_data,
-)
+from _helpers import configure_logging, get_region_mapping, mock_snakemake
+from rpycpl.io import RemindLoader
+from rpycpl.symbols import load_frame, load_symbol_specs
+from rpycpl.transforms.co2_prices import convert_co2_prices, extract_co2_prices
 
 logger = logging.getLogger(__name__)
 
@@ -23,55 +25,28 @@ if __name__ == "__main__":
         )
 
     configure_logging(snakemake)
-    logger.info("Building REMIND CO2 price pathway")
+    logger.info("Building REMIND CO2 price pathway via rpycpl")
 
     countries = set(snakemake.config["countries"])
-    full_mapping = get_region_mapping(snakemake.input["region_mapping"], source="PyPSA-EUR", target="REMIND-EU")
-    mapped_regions = {r for c, rs in full_mapping.items() if c in countries for r in rs if r}
-
-    co2_price = read_remind_data(
-        file_path=snakemake.input["remind_data"],
-        variable_name="p_priceCO2",
-        rename_columns={
-            "tall": "year",
-            "all_regi": "region",
-        },
+    full_mapping = get_region_mapping(
+        snakemake.input["region_mapping"], source="PyPSA-EUR", target="REMIND-EU"
     )
+    mapped_regions = sorted({r for c, rs in full_mapping.items() if c in countries for r in rs if r})
 
-    # unit conversion from USD/tC to USD/tCO2
-    co2_price["value"] *= 12 / (12 + 2 * 16)
+    loader = RemindLoader(snakemake.input["remind_data"])
+    symbols = load_symbol_specs()  # EUR default section
 
-    years_coupled = (
-        read_remind_data(
-            file_path=snakemake.input["remind_data"],
-            variable_name="t",
-            rename_columns={"ttot": "year"},
-        )
-        .year.unique()
-        .tolist()
+    raw = load_frame(loader, symbols["co2_price"])
+    coupled_years = sorted(load_frame(loader, symbols["coupled_years"])["year"].astype(int).unique())
+
+    co2_price = convert_co2_prices(
+        extract_co2_prices(raw, regions=mapped_regions, years=coupled_years),
+        currency_factor=1.0,
     )
-    logger.info("Read coupled years from t set in GDX.")
-
-    co2_price = co2_price.loc[co2_price["region"].isin(mapped_regions)].copy()
-    co2_price["year"] = co2_price["year"].astype(int)
     co2_price = (
-        co2_price.set_index(["region", "year"])["value"]
-        .reindex(
-            pd.MultiIndex.from_product(
-                [sorted(mapped_regions), list(map(int, years_coupled))],
-                names=["region", "year"],
-            ),
-            fill_value=0,
-        )
-        .reset_index()
-        .rename(columns={"value": "co2_price"})
+        co2_price.rename(columns={"value": "co2_price"})[["region", "year", "co2_price"]]
         .sort_values(["region", "year"])
         .reset_index(drop=True)
-    )
-
-    logger.info(
-        "CO2 prices per region for coupled years:\n%s",
-        co2_price.pivot(index="year", columns="region", values="co2_price").round(1).to_string(),
     )
 
     logger.info("Exporting CO2 price pathway to %s", snakemake.output["co2_price"])

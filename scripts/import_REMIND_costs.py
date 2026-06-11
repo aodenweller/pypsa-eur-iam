@@ -26,93 +26,29 @@ logger = logging.getLogger(__name__)
 
 
 def extract_remind_parameter_data(snakemake, mapped_regions: set[str]) -> pd.DataFrame:
-    """Read all REMIND parameters needed for cost overrides and return a long-format DataFrame."""
-    year = str(snakemake.wildcards["year_REMIND"])  # noqa: F841 — used via @year in .query()
+    """Extract REMIND cost parameters via the shared ``RemindEurAdapter`` (rpycpl).
 
-    costs = read_remind_data(
-        file_path=snakemake.input["remind_data"],
-        variable_name="p32_capCost",
-        rename_columns={"ttot": "year", "all_regi": "region", "all_te": "technology"},
-    ).query("year == @year")
-    costs["value"] *= 1e6
-    costs["parameter"] = "investment"
-    costs["unit"] = "USD/MW"
-    costs.loc[costs["technology"].isin(["h2stor", "btstor"]), "unit"] = "USD/MWh"
+    Symbol names + unit factors live in the adapter / central symbol config; this returns the
+    long ``[region, reference, parameter, value, unit]`` table the override builders consume.
+    """
+    from remind.adapter_remind_eur import LINK_TECHS, RemindEurAdapter
+    from rpycpl.io import RemindLoader
+    from rpycpl.symbols import load_symbol_specs
 
-    pm_data = read_remind_data(
-        file_path=snakemake.input["remind_data"],
-        variable_name="pm_data",
-        rename_columns={"all_regi": "region", "all_te": "technology"},
+    # Bind each argument to a named variable (no inline function calls) so the adapter
+    # inputs can be inspected when debugging.
+    loader = RemindLoader(snakemake.input["remind_data"])
+    symbols = load_symbol_specs()
+    coupling_config = {"link_techs": LINK_TECHS}
+    year = int(snakemake.wildcards["year_REMIND"])
+    adapter = RemindEurAdapter(
+        loader=loader,
+        symbols=symbols,
+        region_map={},
+        config=coupling_config,
+        remind_regions=sorted(mapped_regions),
     )
-
-    lifetime = pm_data.query("char == 'lifetime'").copy()
-    lifetime["parameter"] = "lifetime"
-    lifetime["unit"] = "years"
-
-    fom = pm_data.query("char == 'omf'").copy()
-    fom["value"] *= 100
-    fom["parameter"] = "FOM"
-    fom["unit"] = "%/year"
-
-    vom = pm_data.query("char == 'omv'").copy()
-    vom["value"] *= 1e6 / 8760
-    vom["parameter"] = "VOM"
-    vom["unit"] = "USD/MWh"
-
-    co2_intensity = read_remind_data(
-        file_path=snakemake.input["remind_data"],
-        variable_name="pm_emifac",
-        rename_columns={
-            "tall_0": "year",
-            "all_regi_1": "region",
-            "all_enty_2": "from_carrier",
-            "all_enty_3": "to_carrier",
-            "all_te_4": "technology",
-            "all_enty_5": "emission_type",
-        },
-    ).query("to_carrier == 'seel' & emission_type == 'co2' & year == @year")
-    co2_intensity["value"] *= 1e9 * ((2 * 16 + 12) / 12) / 8760 / 1e6
-    co2_intensity["parameter"] = "CO2 intensity"
-    co2_intensity["unit"] = "t_CO2/MWh_th"
-
-    eta_conv = read_remind_data(
-        file_path=snakemake.input["remind_data"],
-        variable_name="pm_eta_conv",
-        rename_columns={"tall": "year", "all_regi": "region", "all_te": "technology"},
-    ).query("year == @year")
-    dataeta = read_remind_data(
-        file_path=snakemake.input["remind_data"],
-        variable_name="pm_dataeta",
-        rename_columns={"tall": "year", "all_regi": "region", "all_te": "technology"},
-    ).query("year == @year")
-    # pm_eta_conv has time-varying efficiency; pm_dataeta is the static fallback.
-    # Use pm_eta_conv where available; add pm_dataeta only for technologies absent from pm_eta_conv.
-    eta_conv_keys = set(zip(eta_conv["region"], eta_conv["technology"]))
-    dataeta_fallback = dataeta[
-        ~pd.MultiIndex.from_arrays([dataeta["region"], dataeta["technology"]]).isin(eta_conv_keys)
-    ]
-    efficiency = pd.concat([eta_conv, dataeta_fallback])
-    efficiency["parameter"] = "efficiency"
-    efficiency["unit"] = "p.u."
-    efficiency.loc[efficiency["technology"].isin(["fnrs", "tnrs"]), "value"] *= 8760 / 1e6
-    efficiency.loc[efficiency["technology"].isin(["fnrs", "tnrs"]), "unit"] = "MWh/g_U"
-    efficiency.loc[efficiency["technology"] == "btin", "value"] **= 2
-
-    fuel_costs = read_remind_data(
-        file_path=snakemake.input["remind_data"],
-        variable_name="p32_PEPriceAvg",
-        rename_columns={"ttot": "year", "all_regi": "region", "all_enty": "technology"},
-    ).query("year == @year")
-    fuel_costs["parameter"] = "fuel"
-    fuel_costs.loc[~(fuel_costs["technology"] == "peur"), "value"] *= 1e6 / 8760
-    fuel_costs["unit"] = "USD/MWh_th"
-    fuel_costs.loc[fuel_costs["technology"] == "peur", "unit"] = "USD/g_U"
-
-    df = pd.concat([costs, lifetime, fom, vom, co2_intensity, efficiency, fuel_costs])[
-        ["region", "technology", "parameter", "value", "unit"]
-    ].rename(columns={"technology": "reference"})
-
-    return df[df["region"].isin(mapped_regions)]
+    return adapter.extract_cost_parameters(year)
 
 
 def build_mapped_overrides(

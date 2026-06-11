@@ -173,3 +173,8 @@ test = ["test"]
 
 [pypi-dependencies]
 gamspy = ">=1.22.0"
+# REMIND<->PyPSA coupling logic (import name: rpycpl). Editable local clone during
+# development so changes take effect without re-publishing; pin to the PyPI release once
+# stabilised. Key must be the DISTRIBUTION name (remind-pypsa-coupling), not the import name.
+remind-pypsa-coupling = { path = "../../remind_pypsa_coupling/Remind-PyPSA-coupling", editable = true }
+httpx = ">=0.27"   # used by rpycpl.io.ssp live SSP fetch
