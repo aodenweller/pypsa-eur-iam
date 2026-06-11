@@ -98,6 +98,7 @@ rule downscale_REMIND_demand:
         population="data/ssp/population.csv",
         gdp="data/ssp/gdp.csv",
         region_mapping="config/regionmapping_21_EU11.csv",
+        remind_data=ITERATION_RESOURCES + "REMIND2PyPSAEUR.gdx",
     output:
         sectoral_load_country=ITERATION_RESOURCES + "sectoral_load_country.csv",
     log:

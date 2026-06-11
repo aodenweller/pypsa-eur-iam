@@ -8,10 +8,11 @@ previous standalone implementation.
 
 import logging
 
-from _helpers import configure_logging, get_region_mapping, mock_snakemake
+from _helpers import configure_logging, mock_snakemake
 from remind.adapter_remind_eur import RemindEurAdapter
 from rpycpl.io import RemindLoader
 from rpycpl.io.remind_symbols import load_frame, load_symbol_specs
+from rpycpl.transforms.mapping import read_region_map as get_region_mapping
 
 logger = logging.getLogger(__name__)
 

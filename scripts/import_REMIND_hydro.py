@@ -11,10 +11,10 @@ import logging
 import pandas as pd
 from _helpers import (
     configure_logging,
-    get_region_mapping,
     mock_snakemake,
     read_remind_data,
 )
+from rpycpl.transforms.mapping import read_region_map as get_region_mapping
 
 logger = logging.getLogger(__name__)
 

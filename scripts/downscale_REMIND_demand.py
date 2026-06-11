@@ -1,16 +1,20 @@
 """Disaggregate REMIND regional demand to country-level demand.
 
-Thin wrapper over ``rpycpl.downscale.disaggregate_demand_to_country``: splits each
-(year, region, sector) row across constituent countries using a sector-weighted blend of
-SSP population and GDP shares (single-country regions are a no-op). Demand attributed to
-unconfigured countries is excluded (warned above 1% in the rpycpl function).
+Stage 2 of the demand pipeline. Thin wrapper over ``RemindEurAdapter.downscale_country_demand``:
+splits each (year, region, sector) row (Stage-1 output of ``import_REMIND_demand``) across
+constituent countries using a sector-weighted blend of SSP population and GDP shares
+(single-country regions are a no-op). Demand attributed to unconfigured countries is excluded
+(warned above 1% in the rpycpl function).
 """
 
 import logging
 
 import pandas as pd
-from _helpers import configure_logging, get_region_mapping, mock_snakemake
-from rpycpl.downscale.demand import disaggregate_demand_to_country
+from _helpers import configure_logging, mock_snakemake
+from remind.adapter_remind_eur import RemindEurAdapter
+from rpycpl.io import RemindLoader
+from rpycpl.io.remind_symbols import load_symbol_specs
+from rpycpl.transforms.mapping import read_region_map as get_region_mapping
 
 logger = logging.getLogger(__name__)
 
@@ -35,17 +39,23 @@ if __name__ == "__main__":
     configured_countries = set(snakemake.params.countries)
 
     years = snakemake.params.years
-    sectoral_load = sectoral_load[sectoral_load["year"].isin(years)]
-    logger.info("Disaggregating demand for %d scenario years via rpycpl ...", len(years))
+    logger.info("Disaggregating demand for %d scenario years via the rpycpl adapter ...", len(years))
 
-    result = disaggregate_demand_to_country(
-        sectoral_load,
-        region_to_countries,
-        pop,
-        gdp,
-        snakemake.params.sector_weights,
-        configured_countries,
+    # The loader is unused for Stage 2 (regional demand is passed in via ``regional=``), but the
+    # adapter binds the downscaling inputs (region map, SSP proxies, sector weights, horizons).
+    adapter = RemindEurAdapter(
+        loader=RemindLoader(snakemake.input["remind_data"]),
+        symbols=load_symbol_specs(),
+        region_map=region_to_countries,
+        config={
+            "sector_weights": snakemake.params.sector_weights,
+            "countries": list(configured_countries),
+            "planning_horizons": list(years),
+        },
+        remind_regions=sorted(region_to_countries),
+        reference_data={"population": pop, "gdp": gdp},
     )
+    result = adapter.downscale_country_demand(regional=sectoral_load)
 
     if missing := sorted(configured_countries - set(result["region"].unique())):
         country_to_region = {c: r for r, members in region_to_countries.items() for c in members}

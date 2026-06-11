@@ -11,7 +11,8 @@ with the carrier name so that downstream scripts receive consistent carrier labe
 import logging
 
 import pandas as pd
-from _helpers import configure_logging, get_region_mapping, mock_snakemake
+from _helpers import configure_logging, mock_snakemake
+from rpycpl.transforms.mapping import read_region_map as get_region_mapping
 
 logger = logging.getLogger(__name__)
 

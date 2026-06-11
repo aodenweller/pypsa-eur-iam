@@ -21,7 +21,8 @@ import numpy as np
 import pandas as pd
 import pypsa
 import yaml
-from _helpers import configure_logging, get_region_mapping
+from _helpers import configure_logging
+from rpycpl.transforms.mapping import read_region_map as get_region_mapping
 from scipy.stats import zscore
 
 logger = logging.getLogger(__name__)

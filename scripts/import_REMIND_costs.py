@@ -20,16 +20,17 @@ import logging
 
 import pandas as pd
 import pypsa
-from _helpers import configure_logging, get_region_mapping
+from _helpers import configure_logging
 from remind.adapter_remind_eur import LINK_TECHS, RemindEurAdapter
 from rpycpl.io import RemindLoader
-from rpycpl.io.remind_symbols import load_frame, load_symbol_specs
+from rpycpl.io.remind_symbols import load_symbol_specs
 from rpycpl.transforms.costs import (
     add_discount_rate,
     build_cost_overrides,
     convert_investment_to_input_capacity_basis,
     merge_cost_overrides_into_baseline,
 )
+from rpycpl.transforms.mapping import read_region_map as get_region_mapping
 
 logger = logging.getLogger(__name__)
 
@@ -115,30 +116,6 @@ def build_set_value_overrides(technology_mapping: pd.DataFrame, mapping_file: st
     return set_df
 
 
-def get_discount_rates(adapter: RemindEurAdapter, year: str, mapped_regions: set[str]) -> pd.Series:
-    """Return the REMIND discount rate (``p_r``) per mapped region for the model year.
-
-    Reads the ``discount_rate`` symbol through the adapter's loader + central symbol config
-    (no hardcoded GDX name), so a region/version that exposes ``p_r`` differently is handled by
-    the symbol config rather than this script.
-    """
-    p_r = load_frame(adapter.loader, adapter.symbols["discount_rate"])
-    p_r = p_r[(p_r["year"].astype(str) == str(year)) & (p_r["region"].isin(mapped_regions))]
-
-    if p_r.empty:
-        raise ValueError(
-            f"No p_r interest rate found for year {year} and regions {mapped_regions}"
-        )
-
-    missing = set(mapped_regions) - set(p_r["region"])
-    if missing:
-        raise ValueError(f"No discount rate found for regions: {missing}")
-
-    rates = p_r.set_index("region")["value"]
-    logger.info("Regional REMIND discount rates for year %s: %s", year, rates.round(4).to_dict())
-    return rates
-
-
 if __name__ == "__main__":
     import sys
     from pathlib import Path
@@ -185,7 +162,8 @@ if __name__ == "__main__":
     )
     non_regional_overrides = pd.concat([pypsa_overrides, set_overrides], ignore_index=True)
 
-    discount_rates = get_discount_rates(adapter, year, mapped_regions)
+    discount_rates = adapter.discount_rates(int(year))
+    logger.info("Regional REMIND discount rates for year %s: %s", year, discount_rates.round(4).to_dict())
 
     n = pypsa.Network(snakemake.input["network"])
     nyears = n.snapshot_weightings.generators.sum() / 8760.0

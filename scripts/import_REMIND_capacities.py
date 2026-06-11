@@ -10,13 +10,13 @@ import logging
 
 from _helpers import (
     configure_logging,
-    get_region_mapping,
     get_technology_mapping,
     mock_snakemake,
 )
 from remind.adapter_remind_eur import LINK_TECHS, RemindEurAdapter
 from rpycpl.io import RemindLoader
 from rpycpl.io.remind_symbols import load_symbol_specs
+from rpycpl.transforms.mapping import read_region_map as get_region_mapping
 
 logger = logging.getLogger(__name__)
 

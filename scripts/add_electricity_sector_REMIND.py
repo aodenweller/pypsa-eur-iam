@@ -16,8 +16,8 @@ import numpy as np
 import pandas as pd
 import pypsa
 import xarray as xr
+from rpycpl.transforms.mapping import read_region_map as get_region_mapping
 
-from scripts._helpers import get_region_mapping
 from scripts.add_electricity import (
     add_co2_emissions,
     add_missing_carriers,

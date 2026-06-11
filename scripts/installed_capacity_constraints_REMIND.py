@@ -9,8 +9,9 @@ import logging
 import pandas as pd
 import pypsa
 import xarray as xr
+from rpycpl.transforms.mapping import read_region_map as get_region_mapping
 
-from scripts._helpers import get_region_mapping, get_technology_mapping
+from scripts._helpers import get_technology_mapping
 
 logger = logging.getLogger(__name__)
 
