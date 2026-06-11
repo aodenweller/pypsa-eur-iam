@@ -363,6 +363,13 @@ rule prepare_network_REMIND:
         scripts("prepare_network.py")
 
 
+def solve_memory_REMIND(wildcards, attempt):
+    """Memory (MB): upstream ``memory()`` plus a steeper per-cluster term (~200 GB at
+    100 nodes / 1h), with +50% per retry."""
+    mem_mb = memory(wildcards) + 1115 * int(wildcards.clusters)  # ~200 GB at 100 nodes / 1h
+    return int(1.5 ** (attempt - 1) * mem_mb)
+
+
 # Solve network for given scenario, iteration and year.
 # Additional constraint on capacities per region is passed via custom_extra_functionality,
 # which requires further input files from REMIND
@@ -402,8 +409,7 @@ rule solve_network_REMIND:
     group:
         "iy"
     resources:
-        # Increase requested memory by 50% on each retry (restart-times in profile).
-        mem_mb=lambda wildcards, attempt: int(1.5 ** (attempt - 1) * memory(wildcards)),
+        mem_mb=solve_memory_REMIND,
         runtime=config_provider("solving", "runtime", default="6h"),
     shadow:
         shadow_config
