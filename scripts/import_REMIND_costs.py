@@ -20,67 +20,53 @@ import logging
 
 import pandas as pd
 import pypsa
-from _helpers import configure_logging, get_region_mapping, read_remind_data
+from _helpers import configure_logging, get_region_mapping
+from remind.adapter_remind_eur import LINK_TECHS, RemindEurAdapter
+from rpycpl.io import RemindLoader
+from rpycpl.io.remind_symbols import load_frame, load_symbol_specs
+from rpycpl.transforms.costs import (
+    add_discount_rate,
+    build_cost_overrides,
+    convert_investment_to_input_capacity_basis,
+    merge_cost_overrides_into_baseline,
+)
 
 logger = logging.getLogger(__name__)
 
 
-def extract_remind_parameter_data(snakemake, mapped_regions: set[str]) -> pd.DataFrame:
-    """Extract REMIND cost parameters via the shared ``RemindEurAdapter`` (rpycpl).
+def build_adapter(remind_data_path: str, mapped_regions: set[str]) -> RemindEurAdapter:
+    """Construct the shared ``RemindEurAdapter`` bound to the REMIND GDX + central symbol config.
 
-    Symbol names + unit factors live in the adapter / central symbol config; this returns the
-    long ``[region, reference, parameter, value, unit]`` table the override builders consume.
+    The adapter is the single entry point to the coupling package: it owns the loader and the
+    resolved symbol map, exposes ``extract_cost_parameters`` (REMIND cost semantics), and is
+    reused below to read the discount-rate symbol.
     """
-    from remind.adapter_remind_eur import LINK_TECHS, RemindEurAdapter
-    from rpycpl.io import RemindLoader
-    from rpycpl.io.remind_symbols import load_symbol_specs
-
-    # Bind each argument to a named variable (no inline function calls) so the adapter
-    # inputs can be inspected when debugging.
-    loader = RemindLoader(snakemake.input["remind_data"])
-    symbols = load_symbol_specs()
-    coupling_config = {"link_techs": LINK_TECHS}
-    year = int(snakemake.wildcards["year_REMIND"])
-    adapter = RemindEurAdapter(
-        loader=loader,
-        symbols=symbols,
+    return RemindEurAdapter(
+        loader=RemindLoader(remind_data_path),
+        symbols=load_symbol_specs(),
         region_map={},
-        config=coupling_config,
+        config={"link_techs": LINK_TECHS},
         remind_regions=sorted(mapped_regions),
     )
-    return adapter.extract_cost_parameters(year)
 
 
 def build_mapped_overrides(
     technology_mapping: pd.DataFrame,
     remind_df: pd.DataFrame,
 ) -> pd.DataFrame:
+    """Map REMIND parameter values onto PyPSA-Eur carriers via rpycpl's ``build_cost_overrides``.
+
+    ``build_cost_overrides`` does the 1:1 (region, technology, parameter) lookup, drops mapped
+    references that are absent from the GDX (those keep the PyPSA-Eur baseline on merge), and
+    raises on duplicates. Here we only log the dropped references and tag the provenance columns
+    that ``merge_cost_overrides_into_baseline`` propagates.
     """
-    Direct 1:1 lookup of REMIND parameter values for mapped PyPSA-Eur carriers.
+    overrides = build_cost_overrides(technology_mapping, remind_df)
 
-    Returns exactly one row per (region, technology, parameter) combination;
-    raises if a duplicate is found.
-    """
-    mapped = technology_mapping.query(
-        "`source` == 'REMIND'"
-    ).drop(columns=["unit"])
-
-    merged = mapped.merge(
-        remind_df,
-        on=["reference", "parameter"],
-        how="left",
-    )
-
-    # Technologies absent from the GDX produce NaN values after the left join.
-    # Fall back to PyPSA-Eur baseline for those (technology, parameter) pairs so
-    # that merge_overrides_into_baseline never overwrites valid baseline costs with NaN.
-    missing_mask = merged["value"].isna()
-    if missing_mask.any():
-        missing = (
-            merged.loc[missing_mask, ["PyPSA-Eur technology", "reference", "parameter"]]
-            .drop_duplicates()
-        )
-        for _, row in missing.iterrows():
+    present = set(zip(remind_df["reference"], remind_df["parameter"]))
+    mapped = technology_mapping.query("`source` == 'REMIND'")
+    for _, row in mapped.iterrows():
+        if (row["reference"], row["parameter"]) not in present:
             logger.warning(
                 "REMIND reference '%s' (→ '%s', parameter '%s') not found in GDX "
                 "— falling back to PyPSA-Eur baseline value.",
@@ -88,19 +74,10 @@ def build_mapped_overrides(
                 row["PyPSA-Eur technology"],
                 row["parameter"],
             )
-        merged = merged[~missing_mask]
 
-    out = merged.rename(columns={"PyPSA-Eur technology": "technology"})[
-        ["region", "technology", "parameter", "value", "unit"]
-    ].copy()
-    dups = out.duplicated(subset=["region", "technology", "parameter"], keep=False)
-    if dups.any():
-        raise ValueError(
-            f"Duplicate (region, technology, parameter) after REMIND merge:\n{out[dups]}"
-        )
-    out["source"] = "REMIND-EU"
-    out["further description"] = "Extracted from REMIND-EU model in import_REMIND_costs.py"
-    return out[["region", "technology", "parameter", "value", "unit", "source", "further description"]]
+    overrides["source"] = "REMIND-EU"
+    overrides["further description"] = "Extracted from REMIND-EU model in import_REMIND_costs.py"
+    return overrides
 
 
 def build_pypsa_default_overrides(
@@ -138,98 +115,28 @@ def build_set_value_overrides(technology_mapping: pd.DataFrame, mapping_file: st
     return set_df
 
 
-def get_discount_rates(snakemake, mapped_regions: set[str]) -> pd.Series:
-    """Return REMIND discount rate per mapped region for the model year, as a Series indexed by region."""
-    year = str(snakemake.wildcards["year_REMIND"])  # noqa: F841 — used via @year in .query()
-    p_r = read_remind_data(
-        file_path=snakemake.input["remind_data"],
-        variable_name="p_r",
-        rename_columns={"ttot": "year", "all_regi": "region"},
-    ).query("year == @year and region in @mapped_regions")
+def get_discount_rates(adapter: RemindEurAdapter, year: str, mapped_regions: set[str]) -> pd.Series:
+    """Return the REMIND discount rate (``p_r``) per mapped region for the model year.
+
+    Reads the ``discount_rate`` symbol through the adapter's loader + central symbol config
+    (no hardcoded GDX name), so a region/version that exposes ``p_r`` differently is handled by
+    the symbol config rather than this script.
+    """
+    p_r = load_frame(adapter.loader, adapter.symbols["discount_rate"])
+    p_r = p_r[(p_r["year"].astype(str) == str(year)) & (p_r["region"].isin(mapped_regions))]
 
     if p_r.empty:
         raise ValueError(
             f"No p_r interest rate found for year {year} and regions {mapped_regions}"
         )
 
-    missing = mapped_regions - set(p_r["region"])
+    missing = set(mapped_regions) - set(p_r["region"])
     if missing:
         raise ValueError(f"No discount rate found for regions: {missing}")
 
     rates = p_r.set_index("region")["value"]
     logger.info("Regional REMIND discount rates for year %s: %s", year, rates.round(4).to_dict())
     return rates
-
-
-def add_discount_rate_for_region(costs: pd.DataFrame, discount_rate: float) -> pd.DataFrame:
-    """Append a discount rate row for every technology in *costs* that does not already carry one."""
-    with_discount = costs.loc[costs["parameter"] == "discount rate", "technology"]
-    no_discount = costs.loc[~costs["technology"].isin(with_discount)][["technology"]].drop_duplicates()
-
-    dr = pd.DataFrame({
-        "parameter": ["discount rate"],
-        "value": [discount_rate],
-        "unit": ["p.u."],
-        "source": ["REMIND-EU"],
-        "further description": ["p_r"],
-    })
-    dr = dr.merge(no_discount, how="cross")
-    return pd.concat([costs, dr], ignore_index=True)
-
-
-def convert_investment_to_input_capacity_basis(costs: pd.DataFrame) -> pd.DataFrame:
-    """
-    REMIND investment costs are per kW of output capacity; PyPSA needs per kW of input (p_nom).
-
-    Converts by multiplying by efficiency (eta = output/input): cost_per_kW_in = cost_per_kW_out * eta.
-
-    - electrolysis: stored efficiency is eta_H2/el (not modified), multiply directly.
-    - battery inverter: stored efficiency is already eta_rt = eta_oneway**2 (pre-squared so that
-      add_electricity.py's **0.5 recovers the one-way value). Capital cost conversion needs
-      eta_oneway, so take sqrt of stored efficiency before multiplying.
-    - fuel cell: handled at Link creation in add_electricity_sector_REMIND.py.
-    """
-    costs = costs.copy()
-    # exponent applied to stored efficiency: 1 = use directly, 0.5 = take sqrt
-    # (battery inverter efficiency is pre-squared to eta_rt so add_electricity's **0.5 recovers eta_oneway)
-    eta_exponents = {"electrolysis": 1, "battery inverter": 0.5}
-    for tech, exp in eta_exponents.items():
-        inv_mask = (costs["technology"] == tech) & (costs["parameter"] == "investment")
-        eff_mask = (costs["technology"] == tech) & (costs["parameter"] == "efficiency")
-        if inv_mask.any() and eff_mask.any():
-            costs.loc[inv_mask, "value"] *= costs.loc[eff_mask, "value"].values ** exp
-            logger.info("Converted investment costs for %s from output to input capacity basis.", tech)
-    return costs
-
-
-def merge_overrides_into_baseline(
-    baseline_raw: pd.DataFrame,
-    overrides: pd.DataFrame,
-) -> pd.DataFrame:
-    """Apply overrides onto the baseline cost table, adding new rows where needed."""
-    base = baseline_raw.set_index(["technology", "parameter"]).copy()
-    ov = overrides.set_index(["technology", "parameter"]).copy()
-
-    if ov.index.duplicated().any():
-        raise ValueError(
-            "Duplicate overrides for (technology, parameter): "
-            f"{ov.index[ov.index.duplicated()].tolist()}"
-        )
-
-    extra_idx = ov.index.difference(base.index)
-    if len(extra_idx) > 0:
-        base = pd.concat([base, ov.loc[extra_idx, base.columns.intersection(ov.columns)]])
-
-    shared_idx = ov.index.intersection(base.index)
-    for col in ["value", "unit", "source", "further description"]:
-        if col in ov.columns:
-            base.loc[shared_idx, col] = ov.loc[shared_idx, col]
-
-    merged = base.reset_index()
-    if merged.duplicated(subset=["technology", "parameter"]).any():
-        dups = merged[merged.duplicated(subset=["technology", "parameter"], keep=False)]
-        raise ValueError(f"Duplicates after merge: {dups}")
-    return merged
 
 
 if __name__ == "__main__":
@@ -264,7 +171,8 @@ if __name__ == "__main__":
     technology_mapping = pd.read_csv(snakemake.input["technology_cost_mapping"])
     mapped_technologies = set(technology_mapping["PyPSA-Eur technology"].dropna().unique())
 
-    remind_long = extract_remind_parameter_data(snakemake, mapped_regions)
+    adapter = build_adapter(snakemake.input["remind_data"], mapped_regions)
+    remind_long = adapter.extract_cost_parameters(int(year))
     baseline_raw = pd.read_csv(snakemake.input["original_costs"])
 
     # REMIND-derived overrides keep their region dimension; non-regional overrides are
@@ -277,7 +185,7 @@ if __name__ == "__main__":
     )
     non_regional_overrides = pd.concat([pypsa_overrides, set_overrides], ignore_index=True)
 
-    discount_rates = get_discount_rates(snakemake, mapped_regions)
+    discount_rates = get_discount_rates(adapter, year, mapped_regions)
 
     n = pypsa.Network(snakemake.input["network"])
     nyears = n.snapshot_weightings.generators.sum() / 8760.0
@@ -296,10 +204,10 @@ if __name__ == "__main__":
         ].drop(columns="region")
 
         combined = pd.concat([region_overrides, non_regional_overrides], ignore_index=True)
-        combined = add_discount_rate_for_region(combined, discount_rates[region])
+        combined = add_discount_rate(combined, discount_rates[region], source="REMIND-EU", reference="p_r")
         combined = convert_investment_to_input_capacity_basis(combined)
 
-        merged_raw = merge_overrides_into_baseline(baseline_raw, combined)
+        merged_raw = merge_cost_overrides_into_baseline(baseline_raw, combined)
 
         merged_raw_mapped = merged_raw.loc[merged_raw["technology"].isin(mapped_technologies)].copy()
         merged_raw_mapped.insert(0, "region", region)
