@@ -649,7 +649,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/zict-3.0.0-pyhd8ed1ab_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-3.23.0-pyhcf101f3_1.conda
       - conda: https://conda.anaconda.org/gurobi/linux-64/gurobi-13.0.1-py313_0.conda
-      - pypi: ../../remind_pypsa_coupling/Remind-PyPSA-coupling
+      - pypi: ../Remind-PyPSA-coupling
       - pypi: https://files.pythonhosted.org/packages/33/1c/58e48dbd80c78916692efde7502e1c062f88e72d5913557875a74e3a8c22/gamspy-1.22.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/ef/07/e8e24549e1b3b95565084b5306a977b0f0aeb570420a263da951b18b394d/gamsapi-53.3.1-cp313-cp313-manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/f7/15/4a443a9f4286da3ccf01b1ac0ee9dc0add13d61b866b29581ced599ae549/gamspy_base-53.3.1-py3-none-manylinux_2_28_x86_64.whl
@@ -1225,7 +1225,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-64/zstandard-0.25.0-py313hcb05632_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/zstd-1.5.7-h3eecb57_6.conda
       - conda: https://conda.anaconda.org/gurobi/osx-64/gurobi-13.0.1-py313_0.conda
-      - pypi: ../../remind_pypsa_coupling/Remind-PyPSA-coupling
+      - pypi: ../Remind-PyPSA-coupling
       - pypi: https://files.pythonhosted.org/packages/1d/b9/4b94023308003a79405973d532c169873fe19d1276f419b61008b3237778/gamsapi-53.3.1-cp313-cp313-macosx_13_0_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/33/1c/58e48dbd80c78916692efde7502e1c062f88e72d5913557875a74e3a8c22/gamspy-1.22.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/9a/e0/79a010f3dca41c0c7faf209695360817eec25b7c4ff2fdd55fd2f572e182/gamspy_base-53.3.1-py3-none-macosx_13_0_x86_64.whl
@@ -1801,7 +1801,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstandard-0.25.0-py313h9734d34_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hbf9d68e_6.conda
       - conda: https://conda.anaconda.org/gurobi/osx-arm64/gurobi-13.0.1-py313_0.conda
-      - pypi: ../../remind_pypsa_coupling/Remind-PyPSA-coupling
+      - pypi: ../Remind-PyPSA-coupling
       - pypi: https://files.pythonhosted.org/packages/33/1c/58e48dbd80c78916692efde7502e1c062f88e72d5913557875a74e3a8c22/gamspy-1.22.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/cd/a0/c829de7f702fea1c45eb1a8aa34ed3187cd658ef791fd494aa6644ee76ea/gamspy_base-53.3.1-py3-none-macosx_13_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/d7/cb/034ab5a2fce3e5de4037d730dfe0147191c71d545b2ef255d66f0f266f29/gamsapi-53.3.1-cp313-cp313-macosx_13_0_arm64.whl
@@ -2371,7 +2371,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstandard-0.25.0-py313h5fd188c_1.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_6.conda
       - conda: https://conda.anaconda.org/gurobi/win-64/gurobi-13.0.1-py313_0.conda
-      - pypi: ../../remind_pypsa_coupling/Remind-PyPSA-coupling
+      - pypi: ../Remind-PyPSA-coupling
       - pypi: https://files.pythonhosted.org/packages/33/1c/58e48dbd80c78916692efde7502e1c062f88e72d5913557875a74e3a8c22/gamspy-1.22.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/aa/b5/01a487964a156c8f4e7a2b40294a6861cdfe2972972bcb4dd8d21fffbd7a/gamsapi-53.3.1-cp313-cp313-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/af/fe/f5e2fc3ce9582edd6482372267ad1efe6d937679d028ecc61b7ab895c8d6/gamspy_base-53.3.1-py3-none-win_amd64.whl
@@ -4519,7 +4519,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/zict-3.0.0-pyhd8ed1ab_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-3.23.0-pyhcf101f3_1.conda
       - conda: https://conda.anaconda.org/gurobi/linux-64/gurobi-13.0.1-py313_0.conda
-      - pypi: ../../remind_pypsa_coupling/Remind-PyPSA-coupling
+      - pypi: ../Remind-PyPSA-coupling
       - pypi: https://files.pythonhosted.org/packages/33/1c/58e48dbd80c78916692efde7502e1c062f88e72d5913557875a74e3a8c22/gamspy-1.22.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/ef/07/e8e24549e1b3b95565084b5306a977b0f0aeb570420a263da951b18b394d/gamsapi-53.3.1-cp313-cp313-manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/f7/15/4a443a9f4286da3ccf01b1ac0ee9dc0add13d61b866b29581ced599ae549/gamspy_base-53.3.1-py3-none-manylinux_2_28_x86_64.whl
@@ -5095,7 +5095,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-64/zstandard-0.25.0-py313hcb05632_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/zstd-1.5.7-h3eecb57_6.conda
       - conda: https://conda.anaconda.org/gurobi/osx-64/gurobi-13.0.1-py313_0.conda
-      - pypi: ../../remind_pypsa_coupling/Remind-PyPSA-coupling
+      - pypi: ../Remind-PyPSA-coupling
       - pypi: https://files.pythonhosted.org/packages/1d/b9/4b94023308003a79405973d532c169873fe19d1276f419b61008b3237778/gamsapi-53.3.1-cp313-cp313-macosx_13_0_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/33/1c/58e48dbd80c78916692efde7502e1c062f88e72d5913557875a74e3a8c22/gamspy-1.22.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/9a/e0/79a010f3dca41c0c7faf209695360817eec25b7c4ff2fdd55fd2f572e182/gamspy_base-53.3.1-py3-none-macosx_13_0_x86_64.whl
@@ -5671,7 +5671,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstandard-0.25.0-py313h9734d34_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hbf9d68e_6.conda
       - conda: https://conda.anaconda.org/gurobi/osx-arm64/gurobi-13.0.1-py313_0.conda
-      - pypi: ../../remind_pypsa_coupling/Remind-PyPSA-coupling
+      - pypi: ../Remind-PyPSA-coupling
       - pypi: https://files.pythonhosted.org/packages/33/1c/58e48dbd80c78916692efde7502e1c062f88e72d5913557875a74e3a8c22/gamspy-1.22.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/cd/a0/c829de7f702fea1c45eb1a8aa34ed3187cd658ef791fd494aa6644ee76ea/gamspy_base-53.3.1-py3-none-macosx_13_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/d7/cb/034ab5a2fce3e5de4037d730dfe0147191c71d545b2ef255d66f0f266f29/gamsapi-53.3.1-cp313-cp313-macosx_13_0_arm64.whl
@@ -6241,7 +6241,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstandard-0.25.0-py313h5fd188c_1.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_6.conda
       - conda: https://conda.anaconda.org/gurobi/win-64/gurobi-13.0.1-py313_0.conda
-      - pypi: ../../remind_pypsa_coupling/Remind-PyPSA-coupling
+      - pypi: ../Remind-PyPSA-coupling
       - pypi: https://files.pythonhosted.org/packages/33/1c/58e48dbd80c78916692efde7502e1c062f88e72d5913557875a74e3a8c22/gamspy-1.22.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/aa/b5/01a487964a156c8f4e7a2b40294a6861cdfe2972972bcb4dd8d21fffbd7a/gamsapi-53.3.1-cp313-cp313-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/af/fe/f5e2fc3ce9582edd6482372267ad1efe6d937679d028ecc61b7ab895c8d6/gamspy_base-53.3.1-py3-none-win_amd64.whl
@@ -34613,7 +34613,7 @@ packages:
   license: PROPRIETARY
   size: 43929220
   timestamp: 1768419842891
-- pypi: ../../remind_pypsa_coupling/Remind-PyPSA-coupling
+- pypi: ../Remind-PyPSA-coupling
   name: remind-pypsa-coupling
   requires_dist:
   - numpy>1.9
