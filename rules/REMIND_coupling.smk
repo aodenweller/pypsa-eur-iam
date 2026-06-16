@@ -221,6 +221,7 @@ rule build_hourly_water_heat_demand_REMIND:
         water_heat_demand=resources("hourly_water_heat_demand_total_base_s_{clusters}.nc"),
     resources:
         mem_mb=2000,
+        runtime=10,
     threads: 8
     log:
         logs("build_hourly_water_heat_demand_total_s_{clusters}.loc"),
@@ -318,6 +319,7 @@ rule add_electricity_sector_REMIND:
         "iy"
     resources:
         mem_mb=10000,
+        runtime=10,
     script:
         scripts("add_electricity_sector_REMIND.py")
 
@@ -359,6 +361,7 @@ rule prepare_network_REMIND:
         "iy"
     resources:
         mem_mb=4000,
+        runtime=10,
     script:
         scripts("prepare_network.py")
 
@@ -456,6 +459,6 @@ rule export_to_REMIND:
         ITERATION_BENCHMARKS + "export_to_REMIND"
     resources:
         mem_mb=lambda wildcards, attempt: attempt * 30000,
-        walltime="00:10:00",
+        runtime=10,
     script:
         scripts("export_to_REMIND.py")

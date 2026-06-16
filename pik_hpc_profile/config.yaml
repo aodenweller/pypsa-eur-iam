@@ -1,13 +1,9 @@
 # A cluster profile for the PIK HPC
-# Profile allows to activeate the gurobi license via an ssh tunnel and solve pypsa
 
-# define the executor
 executor: cluster-generic
-jobs: 500
+jobs: 100
 
-# define the cluster submission command (slurm wrapper)
 # Use partition standard and qos short if not set
-# TODO: Make time an argument of resources.XX (didn't work well for grouped jobs so far)
 cluster-generic-submit-cmd:
   export HPC_PARTITION=${{HPC_PARTITION:-priority}} HPC_QOS=${{HPC_QOS:-standby}} &&
   SCENARIO=$(echo "{wildcards}" | grep -oP '(?<=scen_REMIND=)[^, ]+'); SCENARIO=${{SCENARIO:-prepare}} &&
@@ -17,12 +13,12 @@ cluster-generic-submit-cmd:
     --qos=$HPC_QOS
     --cpus-per-task={threads}
     --mem={resources.mem_mb}
-    --time='00:20:00'
+    --time={resources.runtime}
     --job-name=smk-{rule}-{wildcards}
     --output=logs_slurm/$SCENARIO/{rule}/{rule}-{wildcards}-%j.out
     --parsable
     --export=PATH,LD_LIBRARY_PATH,GUROBI_HOME,GRB_LICENSE_FILE
-    --exclude=csp14c01  # Exclude node
+    --exclude=csp14c01
 cluster-generic-cancel-cmd: scancel
 cluster-generic-status-cmd: "python pik_hpc_profile/slurm-status.py"
 
@@ -30,14 +26,12 @@ cluster-generic-status-cmd: "python pik_hpc_profile/slurm-status.py"
 keep-going: true
 keep-incomplete: true
 latency-wait: 60
-#local-cores: 1
-max-jobs-per-second: 150  # Allow to submit all at once
+local-cores: 1
+max-jobs-per-second: 15
 max-status-checks-per-second: 15
 printshellcmds: true
-#reason: true
 rerun-incomplete: true
-# Other rerun-triggers can lead to rules trying to access the internet (for retrieve_*) functions
-# which leads to errors due to lack of internet access from non-"io" partitions
+# Omit the default `mtime` trigger so retrieve_* rules don't rerun and hit the internet from offline compute nodes.
 rerun-triggers:
 - code
 - input
@@ -49,28 +43,8 @@ restart-times: 2
 # Disable snakemake lock
 nolock: true
 scheduler: greedy
-verbose: true
 
 # now define the resources
 default-resources:
-  - partition=standard
-  - qos=short
   - mem_mb=1000
-  - cores=8
-
-# set-resources:
-#   # Due to group-components aggregating mem_mb resources,
-#   # the high default requests for mem_mb of these will exceed permitted memory requests in queue
-#   # but that much memory is currently not needed for small PyPSA-Eur models, so we overwrite the values here
-#   add_electricity:
-#     mem_mb: 10000
-#     threads: 4
-#   simplify_network:
-#     mem_mb: 10000
-#     threads: 4
-#   cluster_network:
-#     mem_mb: 10000
-#     threads: 4
-#   prepare_network:
-#     mem_mb: 10000
-#     threads: 4
+  - runtime=20  # minutes; fallback for rules that don't set their own runtime
