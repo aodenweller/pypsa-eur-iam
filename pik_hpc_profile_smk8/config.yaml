@@ -1,0 +1,45 @@
+# A cluster profile for the PIK HPC using Snakemake's native SLURM executor.
+
+executor: slurm
+jobs: 100
+
+default-resources:
+  # Enable environment variable override with a priority/standby fallback
+  - slurm_partition=__import__('os').environ.get('HPC_PARTITION', 'priority')
+  - qos=__import__('os').environ.get('HPC_QOS', 'standby')
+  - mem_mb=1000
+  - runtime=20min  # fallback for rules that don't set their own runtime (bare "20" parses as 20 SECONDS -> 1 min)
+  - slurm_extra='--exclude=csp14c01'  # exclude node
+
+# SLURM logs land at: logs_slurm/rule_<name>/<wildcards>/<jobid>.log
+slurm-logdir: logs_slurm
+slurm-keep-successful-logs: true
+slurm-delete-logfiles-older-than: 0
+
+max-jobs-per-second: 15
+max-status-checks-per-second: 15
+local-cores: 1
+latency-wait: 60
+keep-going: true
+keep-incomplete: true
+rerun-incomplete: true
+printshellcmds: true
+restart-times: 2
+nolock: true
+scheduler: greedy
+
+# Omit the default `mtime` trigger so retrieve_* rules don't rerun and hit the internet from offline compute nodes.
+rerun-triggers:
+- code
+- input
+- params
+
+# Tell the cached-http storage plugin not to query data.pypsa.org for file metadata.
+# Safe because all PyPSA-Eur remote data is pinned to versioned URLs (e.g. powerplants/0.8.1/).
+storage-cached-http-skip-remote-checks: true
+
+# set specific resources for some rules
+set-resources:
+  # Upstream declares mem_mb=4000, too lows
+  build_eurostat_balances:
+    mem_mb: attempt * 8000

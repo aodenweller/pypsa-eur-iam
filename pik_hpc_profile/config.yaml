@@ -48,3 +48,9 @@ scheduler: greedy
 default-resources:
   - mem_mb=1000
   - runtime=20min  # fallback for rules that don't set their own runtime
+
+# set specific resources for some rules
+set-resources:
+  # Upstream declares mem_mb=4000, too lows
+  build_eurostat_balances:
+    mem_mb: attempt * 8000
