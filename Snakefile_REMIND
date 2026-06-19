@@ -4,6 +4,8 @@
 # SPDX-License-Identifier: MIT
 
 from pathlib import Path
+import hashlib
+import json
 import yaml
 from os.path import normpath, exists, join
 from shutil import copyfile, move, rmtree
@@ -30,7 +32,15 @@ configfile: "config/plotting.default.yaml"
 validate_config(config)
 
 run = config["run"]
-#scenarios = get_scenarios(run)
+# Auto-derive run name = n<#countries>_rc<N>_<hash8> from non-wildcard resource
+# dimensions (countries, resource_classes, snapshots). Different clusters are 
+# treated as wildcard within the same RDIR.
+if not run.get("name"):
+    rcmap = {t: c.get("resource_classes") for t, c in config["renewable"].items() if isinstance(c, dict) and t != "hydro"}
+    rc = set(rcmap.values()) - {None}
+    fp = json.dumps([sorted(config["countries"]), rcmap, config["snapshots"]], sort_keys=True)
+    run["name"] = f"n{len(config['countries'])}_rc{max(rc, default=0)}_{hashlib.sha1(fp.encode()).hexdigest()[:8]}"
+    print(f"[REMIND] resource scope (run name / RDIR): {run['name']}")
 # RDIR is used for running PyPSA-Eur at different regional resolutions
 RDIR = get_rdir(run)
 shadow_config = get_shadow(run)
@@ -74,8 +84,8 @@ ITERATION_RESULTS = SCENARIO_RESULTS + IDIR
 # Rules that are run locally, not via a SLURM job
 localrules:
     download_and_prepare_REMIND,
-    retrieve_ssp_data,
     cluster_network,  # No SLURM b/c of Gurobi license check and small problem size
+    build_swiss_energy_balances,  # Taken from primary source, requires internet access
     solve_all_networks_REMIND,
     export_to_REMIND
 
@@ -97,6 +107,12 @@ OSM_DATASET = dataset_version("osm")
 
 
 include: "rules/retrieve.smk"
+include: "rules/build_electricity.smk"
+include: "rules/build_sector.smk"
+
+
+# Specific REMIND coupling rules
+include: "rules/REMIND_coupling.smk"
 
 # All retrieve_* rules use the storage plugin: the HTTP download happens in the
 # main process (login node), and the rule body just copies from cache to output.
@@ -105,11 +121,3 @@ workflow.localrules(*(
     r.name for r in workflow.rules
     if r.name.startswith("retrieve_")
 ))
-
-include: "rules/build_electricity.smk"
-include: "rules/build_sector.smk"
-
-
-# Specific REMIND coupling rules
-include: "rules/REMIND_coupling.smk"
-
