@@ -1,10 +1,12 @@
 """
 Read REMIND hydro capacity and generation targets and export them for use in PyPSA-Eur.
 
-Reads ``hydro_capacity`` (``p32_hydroCapacity``, TW -> MW) and ``hydro_generation``
-(``p32_hydroGeneration``, TWa -> MWh/year) from the REMIND GDX via the central symbol config
-(unit conversions applied by ``load_frame``), merges them, derives a capacity factor, and filters
-to REMIND regions that overlap with the configured PyPSA-Eur countries.
+Reads ``hydro_capacity`` and ``hydro_generation`` from the REMIND output (GDX or IAMC .mif,
+auto-detected) via the central symbol config — GDX: ``p32_hydroCapacity`` (TW) /
+``p32_hydroGeneration`` (TWa); IAMC: ``Cap|Electricity|Hydro`` (GW) / ``SE|Electricity|Hydro``
+(EJ/yr). Both are converted to MW / MWh-per-year by ``load_frame``. Merges them, derives a
+capacity factor, and filters to REMIND regions that overlap with the configured PyPSA-Eur
+countries.
 """
 
 import logging
@@ -37,7 +39,7 @@ if __name__ == "__main__":
     )
 
     loader = RemindLoader(snakemake.input["remind_data"])
-    symbols = load_symbol_specs()
+    symbols = load_symbol_specs(backend=loader.backend)
 
     hydro_capacity = load_frame(loader, symbols["hydro_capacity"])  # TW -> MW
     hydro_generation = load_frame(

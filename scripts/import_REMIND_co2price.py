@@ -39,12 +39,16 @@ if __name__ == "__main__":
     )
 
     loader = RemindLoader(snakemake.input["remind_data"])
-    symbols = load_symbol_specs()
+    symbols = load_symbol_specs(backend=loader.backend)
 
-    # CO2 prices are reindexed to REMIND's coupled-year set (the `coupled_years`/`t` symbol).
-    coupled_years = sorted(
-        load_frame(loader, symbols["coupled_years"])["year"].astype(int).unique()
-    )
+    # GDX: reindex to REMIND's coupled-year set (symbol `t`).
+    # IAMC: mif starts in 2005 so we can't infer coupling years from the data; use config instead.
+    if "coupled_years" in symbols:
+        coupled_years = sorted(
+            load_frame(loader, symbols["coupled_years"])["year"].astype(int).unique()
+        )
+    else:
+        coupled_years = sorted(int(y) for y in snakemake.config["remind_coupling"]["years"])
 
     raw = load_frame(loader, symbols["co2_price"])  # tC -> tCO2 applied here
     prices = extract_co2_prices(raw, regions=mapped_regions, years=coupled_years)

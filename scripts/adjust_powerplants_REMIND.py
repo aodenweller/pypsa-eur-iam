@@ -93,7 +93,7 @@ def build_scaling_factors(
     )
 
     caps_y = capacities.loc[capacities["year"] == year].copy()
-    caps_y = caps_y.rename(columns={"p_nom_min": "capacity_remind"})
+    caps_y = caps_y.rename(columns={"value": "capacity_remind"})
 
     compare = ppl_grouped.merge(
         caps_y[["region_REMIND", "carrier", "capacity_remind"]],

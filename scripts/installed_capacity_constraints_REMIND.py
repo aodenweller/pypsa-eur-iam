@@ -71,7 +71,7 @@ def _prepare_targets(snakemake) -> pd.Series:
     capacities = pd.read_csv(snakemake.input["capacities"])
     year = int(snakemake.wildcards.year_REMIND)
 
-    required_columns = {"year", "region_REMIND", "carrier", "p_nom_min"}
+    required_columns = {"year", "region_REMIND", "carrier", "value"}
     missing_columns = required_columns.difference(capacities.columns)
     if missing_columns:
         raise ValueError(
@@ -85,7 +85,7 @@ def _prepare_targets(snakemake) -> pd.Series:
         return pd.Series(dtype=float)
 
     targets = capacities.groupby(["region_REMIND", "carrier"], observed=False)[
-        "p_nom_min"
+        "value"
     ].sum()
     return targets[targets > 0]
 

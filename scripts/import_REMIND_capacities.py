@@ -2,9 +2,13 @@
 Read installed-capacity targets from REMIND and export them as PyPSA-Eur lower bounds.
 
 Thin wrapper over ``rpycpl.transforms.capacities.build_capacity_targets``: reads the capacity
-symbol (TW -> MW), applies the REMIND-GDX consolidation declared on the ``capacity`` symbol spec
-(VRE-coupled-variant merge, battery scaling, link output->input adjustment), and maps REMIND techs
-to PyPSA-Eur carriers. Output: [year, region_REMIND, carrier, p_nom_min].
+spec (unit conversion handled by the spec), applies any ``consolidation`` block declared on the
+spec (VRE-variant merge, battery scaling, link output→input adjustment), and maps model tech
+tokens to PyPSA-Eur carriers.
+
+Output columns: [year, region_REMIND, carrier, value, unit]
+  - value: input-basis capacity in MW (link-like techs already divided by efficiency)
+  - unit: "MW" for all rows
 """
 
 import logging
@@ -34,20 +38,27 @@ if __name__ == "__main__":
     configure_logging(snakemake)
     logger.info("Building REMIND capacity targets via rpycpl.build_capacity_targets")
 
+    countries = set(snakemake.params["countries"])
     region_mapping = get_region_mapping(
         snakemake.input["region_mapping"], source="PyPSA-EUR", target="REMIND-EU"
     )
-    mapped_regions = sorted({r for rs in region_mapping.values() for r in rs if r})
+    mapped_regions = sorted({r for c, rs in region_mapping.items() if c in countries for r in rs if r})
     tech_map = get_technology_mapping(snakemake.input["technology_cost_mapping"])
 
     loader = RemindLoader(snakemake.input["remind_data"])
-    symbols = load_symbol_specs()
+    symbols = load_symbol_specs(backend=loader.backend)
 
-    capacities = build_capacity_targets(loader, symbols, mapped_regions, tech_map)
+    years = snakemake.params["years"]
+
+    capacities = build_capacity_targets(
+        loader, symbols, mapped_regions, tech_map,
+        map_tech_col="REMIND-EU", map_carrier_col="PyPSA-Eur",
+    )
     capacities = (
         capacities.rename(columns={"region": "region_REMIND"})[
-            ["year", "region_REMIND", "carrier", "p_nom_min"]
+            ["year", "region_REMIND", "carrier", "value", "unit"]
         ]
+        .query("year in @years and region_REMIND in @mapped_regions")
         .sort_values(["year", "region_REMIND", "carrier"])
         .reset_index(drop=True)
     )

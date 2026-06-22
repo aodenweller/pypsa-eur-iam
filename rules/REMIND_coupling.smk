@@ -5,6 +5,18 @@
 # Additional rules required for REMIND coupling
 # Author: Adrian Odenweller (adrian.odenweller@pik-potsdam.de)
 
+# ---------------------------------------------------------------------------
+# Input-format switch: set remind_coupling.input_format: gdx (default) or iamc
+# in your config to select the REMIND data source. For iamc, also set
+# remind_coupling.input_filename to the actual .mif filename.
+# ---------------------------------------------------------------------------
+_REMIND_INPUT_FORMAT = config.get("remind_coupling", {}).get("input_format", "gdx")
+_REMIND_INPUT_FILENAME = (
+    config.get("remind_coupling", {}).get("input_filename", "REMIND_output.mif")
+    if _REMIND_INPUT_FORMAT == "iamc"
+    else "REMIND2PyPSAEUR.gdx"
+)
+
 rule retrieve_ssp_data:
     params:
         ssp_scenario=config_provider("remind_coupling", "demand_downscaling", "ssp_scenario"),
@@ -72,8 +84,11 @@ rule download_and_prepare_REMIND:
 
 # Input 1: Read demand data from REMIND and create a csv with the demand for each technology and region.
 rule import_REMIND_demand:
+    params:
+        years=config_provider("remind_coupling", "years"),
+        countries=config_provider("countries"),
     input:
-        remind_data=ITERATION_RESOURCES + "REMIND2PyPSAEUR.gdx",
+        remind_data=ITERATION_RESOURCES + _REMIND_INPUT_FILENAME,
         region_mapping="config/regionmapping_21_EU11.csv",
     output:
         sectoral_load=ITERATION_RESOURCES + "sectoral_load.csv",
@@ -98,7 +113,7 @@ rule downscale_REMIND_demand:
         population="data/ssp/population.csv",
         gdp="data/ssp/gdp.csv",
         region_mapping="config/regionmapping_21_EU11.csv",
-        remind_data=ITERATION_RESOURCES + "REMIND2PyPSAEUR.gdx",
+        remind_data=ITERATION_RESOURCES + _REMIND_INPUT_FILENAME,
     output:
         sectoral_load_country=ITERATION_RESOURCES + "sectoral_load_country.csv",
     log:
@@ -113,8 +128,11 @@ rule downscale_REMIND_demand:
 
 # Input 2: Read capacity data from REMIND and create a csv with the installed capacities for each technology and region.
 rule import_REMIND_capacities:
+    params:
+        years=config_provider("remind_coupling", "years"),
+        countries=config_provider("countries"),
     input:
-        remind_data=ITERATION_RESOURCES + "REMIND2PyPSAEUR.gdx",
+        remind_data=ITERATION_RESOURCES + _REMIND_INPUT_FILENAME,
         region_mapping="config/regionmapping_21_EU11.csv",
         technology_cost_mapping="config/technology_cost_mapping.csv",
     output:
@@ -131,7 +149,7 @@ rule import_REMIND_capacities:
 # Input 3: Read CO2 price pathway from REMIND and create a csv with year and CO2 price.
 rule import_REMIND_co2price:
     input:
-        remind_data=ITERATION_RESOURCES + "REMIND2PyPSAEUR.gdx",
+        remind_data=ITERATION_RESOURCES + _REMIND_INPUT_FILENAME,
         region_mapping="config/regionmapping_21_EU11.csv",
     output:
         co2_price=ITERATION_RESOURCES + "co2_price.csv",
@@ -156,7 +174,7 @@ rule import_REMIND_costs:
         custom_costs=config_provider("costs", "custom_cost_fn"),
         region_mapping="config/regionmapping_21_EU11.csv",
         technology_cost_mapping="config/technology_cost_mapping.csv",
-        remind_data=ITERATION_RESOURCES + "REMIND2PyPSAEUR.gdx",
+        remind_data=ITERATION_RESOURCES + _REMIND_INPUT_FILENAME,
     output:
         costs_processed=ITERATION_RESOURCES + "y{year_REMIND}/costs_processed.csv",
         costs_processed_flat=ITERATION_RESOURCES + "y{year_REMIND}/costs_processed_flat.csv",
@@ -170,11 +188,11 @@ rule import_REMIND_costs:
     script:
         scripts("import_REMIND_costs.py")
 
-# Input 5: Special case for hydro, read capacity and generation from REMIND.
+# Input 5: Special case for hydro, read capacity and generation from REMIND (GDX or IAMC .mif).
 # In add_electricity_sector_REMIND, hydro infeed and capacity is adjusted to follow REMIND's capacity factor.
 rule import_REMIND_hydro:
     input:
-        remind_data=ITERATION_RESOURCES + "REMIND2PyPSAEUR.gdx",
+        remind_data=ITERATION_RESOURCES + _REMIND_INPUT_FILENAME,
         region_mapping="config/regionmapping_21_EU11.csv",
     output:
         hydro_targets=ITERATION_RESOURCES + "hydro_targets.csv",

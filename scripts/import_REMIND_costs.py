@@ -1,18 +1,20 @@
 """
 Build REMIND-adjusted technology costs for PyPSA-Eur.
 
-Reads investment costs, fixed/variable O&M, lifetime, efficiency, CO2 intensity, and
-fuel costs from the REMIND GDX file, maps them to PyPSA-Eur carrier names via the
-technology mapping CSV, and merges the result as overrides on top of the PyPSA-Eur
-baseline cost CSV. Investment costs for electrolysis and battery inverter are converted
-from output-capacity to input-capacity basis. Per-region discount rates from REMIND are
-used, and PyPSA-Eur's ``prepare_costs`` function computes annualised capital costs and
-marginal costs — called once per mapped REMIND region.
+Reads investment costs, fixed/variable O&M, lifetime, efficiency, CO2 intensity, and fuel
+costs from the REMIND output file (GDX or IAMC .mif), maps them to PyPSA-Eur carrier names
+via the technology mapping CSV, and merges the result as overrides on top of the PyPSA-Eur
+baseline cost CSV. Investment costs for electrolysis and battery inverter are converted from
+output-capacity to input-capacity basis. Per-region discount rates from REMIND are used, and
+PyPSA-Eur's ``prepare_costs`` function computes annualised capital costs and marginal costs —
+called once per mapped REMIND region.
 
 Outputs
 -------
-- ``costs_raw_overwritten.csv``: raw cost table restricted to mapped technologies, with REMIND overrides applied; one block per region (region column is the first column).
-- ``costs_processed.csv``: processed cost table (capital_cost, marginal_cost, etc.) ready for the network build; indexed by (region, technology) MultiIndex.
+- ``costs_raw_overwritten.csv``: raw cost table restricted to mapped technologies, with REMIND
+  overrides applied; one block per region (region column is the first column).
+- ``costs_processed.csv``: processed cost table (capital_cost, marginal_cost, etc.) ready for
+  the network build; indexed by (region, technology) MultiIndex.
 """
 
 import logging
@@ -20,110 +22,23 @@ import logging
 import pandas as pd
 import pypsa
 from _helpers import configure_logging
-from rpycpl import CouplingAdapter
+from rpycpl import RemindGdxAdapter, RemindIamcAdapter
 from rpycpl.io import RemindLoader
 from rpycpl.io.remind_symbols import load_symbol_specs
 from rpycpl.transforms.costs import (
     add_discount_rate,
-    build_cost_overrides,
+    build_baseline_overrides,
+    build_mapped_overrides,
+    build_set_value_overrides,
     convert_investment_to_input_capacity_basis,
-    merge_cost_overrides_into_baseline,
+    apply_overrides,
 )
 from rpycpl.transforms.mapping import read_region_map as get_region_mapping
 
 logger = logging.getLogger(__name__)
 
-
-def build_adapter(remind_data_path: str, mapped_regions: set[str]) -> CouplingAdapter:
-    """
-    Construct the base ``CouplingAdapter`` bound to the REMIND GDX + central symbol config.
-
-    Costs is the one place the adapter earns its keep: it owns the loader and the resolved symbol
-    map, exposes ``extract_cost_parameters`` (REMIND cost semantics) across several reads through
-    one open GDX, and is reused below to read the discount-rate symbol. No subclass is needed —
-    the EUR-specific btin² efficiency tweak is applied inline in ``main`` after extraction.
-    """
-    return CouplingAdapter(
-        loader=RemindLoader(remind_data_path),
-        symbols=load_symbol_specs(),
-        region_map={},
-        config={},
-        remind_regions=sorted(mapped_regions),
-    )
-
-
-def build_mapped_overrides(
-    technology_mapping: pd.DataFrame,
-    remind_df: pd.DataFrame,
-) -> pd.DataFrame:
-    """
-    Map REMIND parameter values onto PyPSA-Eur carriers via rpycpl's ``build_cost_overrides``.
-
-    ``build_cost_overrides`` does the 1:1 (region, technology, parameter) lookup, drops mapped
-    references that are absent from the GDX (those keep the PyPSA-Eur baseline on merge), and
-    raises on duplicates. Here we only log the dropped references and tag the provenance columns
-    that ``merge_cost_overrides_into_baseline`` propagates.
-    """
-    overrides = build_cost_overrides(technology_mapping, remind_df)
-
-    present = set(zip(remind_df["reference"], remind_df["parameter"]))
-    mapped = technology_mapping.query("`source` == 'REMIND'")
-    for _, row in mapped.iterrows():
-        if (row["reference"], row["parameter"]) not in present:
-            logger.warning(
-                "REMIND reference '%s' (→ '%s', parameter '%s') not found in GDX "
-                "— falling back to PyPSA-Eur baseline value.",
-                row["reference"],
-                row["PyPSA-Eur technology"],
-                row["parameter"],
-            )
-
-    overrides["source"] = "REMIND-EU"
-    overrides["further description"] = (
-        "Extracted from REMIND-EU model in import_REMIND_costs.py"
-    )
-    return overrides
-
-
-def build_pypsa_default_overrides(
-    technology_mapping: pd.DataFrame,
-    baseline_raw: pd.DataFrame,
-) -> pd.DataFrame:
-    """Pull parameter values from the PyPSA-Eur baseline costs for rows marked source=PyPSA-Eur."""
-    df = technology_mapping.query("`source` == 'PyPSA-Eur'").drop(columns=["unit"])
-    df = df.merge(
-        baseline_raw,
-        left_on=["PyPSA-Eur technology", "parameter"],
-        right_on=["technology", "parameter"],
-        how="left",
-        validate="one_to_one",
-    )
-    df["source"] = "PyPSA-EUR"
-    df["further description"] = "Default parameter from PyPSA-EUR baseline cost file"
-    return df[
-        ["technology", "parameter", "value", "unit", "source", "further description"]
-    ]
-
-
-def build_set_value_overrides(
-    technology_mapping: pd.DataFrame, mapping_file: str
-) -> pd.DataFrame:
-    """Return overrides for rows marked source=fixed, converting the reference column to a numeric value."""
-    set_df = (
-        technology_mapping.query("`source` == 'fixed'")
-        .rename(
-            columns={
-                "PyPSA-Eur technology": "technology",
-                "reference": "value",
-                "comment": "further description",
-            }
-        )[["technology", "parameter", "value", "unit", "further description"]]
-        .copy()
-    )
-    set_df["value"] = pd.to_numeric(set_df["value"], errors="raise")
-    set_df["source"] = f"Set via configuration file: {mapping_file}"
-    set_df["further description"] = set_df["further description"].fillna("")
-    return set_df
+# Which adapter handles each REMIND output backend (selected from loader.backend below).
+REMIND_ADAPTERS = {"gdx": RemindGdxAdapter, "iamc": RemindIamcAdapter}
 
 
 if __name__ == "__main__":
@@ -165,11 +80,17 @@ if __name__ == "__main__":
         technology_mapping["PyPSA-Eur technology"].dropna().unique()
     )
 
-    adapter = build_adapter(snakemake.input["remind_data"], mapped_regions)
+    loader = RemindLoader(snakemake.input["remind_data"])
+    symbols = load_symbol_specs(backend=loader.backend)
+    adapter_cls = REMIND_ADAPTERS[loader.backend]
+    adapter = adapter_cls(
+        loader, symbols, region_map={}, config={},
+        remind_regions=sorted(mapped_regions),
+    )
     remind_long = adapter.extract_cost_parameters(int(year))
 
     # btin (battery-inverter) round-trip efficiency: REMIND reports the one-way inverter
-    # efficiency; PyPSA-Eur's two-link battery needs it squared. (Was the EUR adapter override.)
+    # efficiency; PyPSA-Eur's two-link battery needs it squared.
     is_btin_eff = (remind_long["parameter"] == "efficiency") & (
         remind_long["reference"] == "btin"
     )
@@ -177,16 +98,30 @@ if __name__ == "__main__":
 
     baseline_raw = pd.read_csv(snakemake.input["original_costs"])
 
+    # Column names and source-filter values for the technology_cost_mapping CSV.
+    _tech_col = "PyPSA-Eur technology"
+    _source_col = "source"
+
     # REMIND-derived overrides keep their region dimension; non-regional overrides are
     # the same for every region (PyPSA-Eur baseline values and fixed-value entries).
-    regional_mapped_overrides = build_mapped_overrides(technology_mapping, remind_long)
-    pypsa_overrides = build_pypsa_default_overrides(technology_mapping, baseline_raw)
-    set_overrides = build_set_value_overrides(
-        technology_mapping,
-        snakemake.input["technology_cost_mapping"],
+    regional_mapped_overrides = build_mapped_overrides(
+        technology_mapping, remind_long,
+        tech_col=_tech_col, ref_col="reference", param_col="parameter",
+        source_col=_source_col, model_value="REMIND", out_source="REMIND-EU",
     )
     non_regional_overrides = pd.concat(
-        [pypsa_overrides, set_overrides], ignore_index=True
+        [
+            build_baseline_overrides(
+                technology_mapping, baseline_raw,
+                tech_col=_tech_col, source_col=_source_col, baseline_value="PyPSA-Eur",
+            ),
+            build_set_value_overrides(
+                technology_mapping, snakemake.input["technology_cost_mapping"],
+                tech_col=_tech_col, source_col=_source_col,
+                fixed_value="fixed", comment_col="comment",
+            ),
+        ],
+        ignore_index=True,
     )
 
     discount_rates = adapter.discount_rates(int(year))
@@ -220,7 +155,7 @@ if __name__ == "__main__":
         )
         combined = convert_investment_to_input_capacity_basis(combined)
 
-        merged_raw = merge_cost_overrides_into_baseline(baseline_raw, combined)
+        merged_raw = apply_overrides(baseline_raw, combined)
 
         merged_raw_mapped = merged_raw.loc[
             merged_raw["technology"].isin(mapped_technologies)

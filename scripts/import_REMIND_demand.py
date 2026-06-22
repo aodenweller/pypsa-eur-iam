@@ -1,21 +1,30 @@
 """
 Read sectoral electricity demand from REMIND and export it for use in PyPSA-Eur.
 
-Stage 1 of the demand pipeline. Reads the load-sector symbol (``v32_load_sector`` with
-``p32_load_sector`` fallback, resolved from the central symbol config), converts TWa to annual
-MWh (applied by ``load_frame`` via the symbol's ``to_unit``), and filters to the REMIND regions
-overlapping the configured countries. ``downscale_REMIND_demand`` then splits this to countries.
+Stage 1 of the demand pipeline. Reads regional sectoral electricity demand via the
+``CouplingAdapter`` (backend-selected by ``RemindLoader``):
+
+- GDX backend: reads ``load_sector`` symbol (``v32_load_sector`` / ``p32_load_sector``),
+  converts TWa→MWh via the symbol spec.
+- IAMC backend: derives demand from SE|Electricity, transmission losses, and FE sector
+  variables, applying an implicit T&D efficiency and computing an AC residual for
+  untracked loads.
+
+``downscale_REMIND_demand`` splits this to countries (Stage 2, backend-agnostic).
 """
 
 import logging
 
 from _helpers import configure_logging, mock_snakemake
+from rpycpl import RemindGdxAdapter, RemindIamcAdapter
 from rpycpl.io import RemindLoader
-from rpycpl.io.remind_symbols import load_frame, load_symbol_specs
-from rpycpl.transforms.loads import convert_loads
+from rpycpl.io.remind_symbols import load_symbol_specs
 from rpycpl.transforms.mapping import read_region_map as get_region_mapping
 
 logger = logging.getLogger(__name__)
+
+# Which adapter handles each REMIND output backend (selected from loader.backend below).
+REMIND_ADAPTERS = {"gdx": RemindGdxAdapter, "iamc": RemindIamcAdapter}
 
 
 if __name__ == "__main__":
@@ -28,23 +37,33 @@ if __name__ == "__main__":
         )
 
     configure_logging(snakemake)
-    logger.info("Loading REMIND regional demand from the rpycpl symbol config ...")
+    logger.info("Loading REMIND regional demand ...")
 
+    countries = set(snakemake.params["countries"])
     region_mapping = get_region_mapping(
         snakemake.input["region_mapping"], source="PyPSA-EUR", target="REMIND-EU"
     )
-    mapped_regions = sorted({r for rs in region_mapping.values() for r in rs if r})
+    mapped_regions = sorted({r for c, rs in region_mapping.items() if c in countries for r in rs if r})
 
     loader = RemindLoader(snakemake.input["remind_data"])
-    symbols = load_symbol_specs()
+    symbols = load_symbol_specs(backend=loader.backend)
 
-    raw = load_frame(loader, symbols["load_sector"])  # TWa -> MWh applied here
-    raw["year"] = raw["year"].astype(int)
-    demand = convert_loads(raw, regions=mapped_regions, unit_factor=1.0)
+    adapter_cls = REMIND_ADAPTERS[loader.backend]
+    adapter = adapter_cls(
+        loader, symbols,
+        region_map={},
+        config={},
+        remind_regions=mapped_regions,
+    )
+    demand = adapter.build_regional_demand()
+
+    years = snakemake.params["years"]
+    demand = demand[demand["year"].isin(years) & demand["region"].isin(mapped_regions)]
 
     demand.to_csv(snakemake.output["sectoral_load"], index=False)
     logger.info(
-        "Wrote %s rows of REMIND demand to %s",
+        "Wrote %d rows of REMIND demand (%s backend) to %s",
         len(demand),
+        loader.backend,
         snakemake.output["sectoral_load"],
     )

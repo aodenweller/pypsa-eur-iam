@@ -8,7 +8,10 @@ logging:
 
 # REMIND-specific settings
 remind_coupling:
-  # Coupled years, set by import_REMIND_config.py from the t set in REMIND2PyPSAEUR.gdx
+  # Input format: "gdx" (REMIND2PyPSAEUR.gdx) or "iamc" (.mif)
+  # this determines loader backend and symbol config
+  input_format: iamc
+  input_filename: REMIND_generic_SSP2-EU21-PkBudg1000_withoutPlus.mif
   years: [2030, 2035, 2040, 2045, 2050, 2055, 2060, 2070, 2080, 2090, 2100, 2110, 2130, 2150]
   # Enforce REMIND capacities via constraint in solve_network.py
   installed_capacities:
