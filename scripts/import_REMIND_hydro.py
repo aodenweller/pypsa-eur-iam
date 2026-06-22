@@ -63,9 +63,7 @@ if __name__ == "__main__":
     )
 
     region_mapping = get_region_mapping(
-        snakemake.input["region_mapping"],
-        source="PyPSA-EUR",
-        target="REMIND-EU",
+        snakemake.input["region_mapping"], source="PyPSA-EUR", target="REMIND-EU"
     )
     mapped_regions = (
         pd.Series(region_mapping, name="region").explode().dropna().unique()

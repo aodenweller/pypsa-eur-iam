@@ -154,10 +154,7 @@ if __name__ == "__main__":
     fp_mapping = snakemake.input["technology_mapping"]
 
     region_mapping = get_region_mapping(
-        snakemake.input["region_mapping"],
-        source="PyPSA-EUR",
-        target="REMIND-EU",
-        flatten=True,
+        snakemake.input["region_mapping"], source="PyPSA-EUR", target="REMIND-EU", flatten=True
     )
 
     ppl = ppl.loc[ppl["Country"].isin(snakemake.params["countries"])].copy()

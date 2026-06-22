@@ -18,10 +18,7 @@ logger = logging.getLogger(__name__)
 
 def _build_country_to_region_map(fp_region_mapping: str) -> pd.Series:
     mapping = get_region_mapping(
-        fp_region_mapping,
-        source="PyPSA-EUR",
-        target="REMIND-EU",
-        flatten=True,
+        fp_region_mapping, source="PyPSA-EUR", target="REMIND-EU", flatten=True
     )
     return pd.Series(mapping)
 

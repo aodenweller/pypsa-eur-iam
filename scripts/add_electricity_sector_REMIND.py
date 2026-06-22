@@ -130,13 +130,19 @@ def _normalize_weights(s: pd.Series) -> pd.Series:
     return s / total
 
 
+def _to_scalar_region(value):
+    """Return the first non-null member of a list-like value, or the value itself if scalar."""
+    if isinstance(value, (list, tuple, set)):
+        for item in value:
+            if pd.notna(item):
+                return item
+        return float("nan")
+    return value
+
+
 def _get_country_to_region(region_mapping_fn: str) -> pd.Series:
     """Return a Series mapping PyPSA-EUR country codes to scalar REMIND-EU region labels."""
-    mapping = get_region_mapping(
-        region_mapping_fn,
-        source="PyPSA-EUR",
-        target="REMIND-EU",
-    )
+    mapping = get_region_mapping(region_mapping_fn, source="PyPSA-EUR", target="REMIND-EU")
     return pd.Series(mapping).map(_to_scalar_region)
 
 
@@ -584,16 +590,6 @@ def attach_heat_demand_remind(
     logger.info("Attached REMIND %s demand (%.2f MWh).", kind, float(demand_by_country.sum()))
 
 
-def _to_scalar_region(value: Any) -> str | float:
-    """Return a scalar region label from mapping values that may be list-like."""
-    if isinstance(value, (list, tuple, set)):
-        for item in value:
-            if pd.notna(item):
-                return item
-        return np.nan
-    return value
-
-
 def attach_hydro_remind(
     n: pypsa.Network,
     costs: pd.DataFrame,
@@ -639,11 +635,7 @@ def attach_hydro_remind(
     hydro_assets = pd.concat([ror, hydro], axis=0)
     hydro_assets["country"] = hydro_assets["bus"].map(n.buses.country)
 
-    region_mapping = get_region_mapping(
-        region_mapping_fn,
-        source="PyPSA-EUR",
-        target="REMIND-EU",
-    )
+    region_mapping = get_region_mapping(region_mapping_fn, source="PyPSA-EUR", target="REMIND-EU")
     country_to_region = pd.Series(region_mapping).map(_to_scalar_region)
     hydro_assets["region"] = hydro_assets["country"].map(country_to_region)
 
