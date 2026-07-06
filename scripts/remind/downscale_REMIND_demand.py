@@ -4,15 +4,15 @@ Disaggregate REMIND regional demand to country-level demand.
 Stage 2 of the demand pipeline. Splits each (year, region, sector) row (Stage-1 output of
 ``import_REMIND_demand``) across constituent countries using a sector-weighted blend of SSP
 population and GDP shares (single-country regions are a no-op). Demand attributed to unconfigured
-countries is excluded (warned above 1% in the rpycpl function).
+countries is excluded (warned above 1% in the iampypsa function).
 """
 
 import logging
 
 import pandas as pd
 from _helpers import configure_logging, mock_snakemake
-from rpycpl.downscale.demand import disaggregate_demand_to_country
-from rpycpl.transforms.mapping import read_region_map as get_region_mapping
+from iampypsa.downscale.demand import disaggregate_demand_to_country
+from iampypsa.transforms.mapping import read_region_map as get_region_mapping
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ if __name__ == "__main__":
     pop = pd.read_csv(snakemake.input.population).set_index(["iso2", "year"])
     gdp = pd.read_csv(snakemake.input.gdp).set_index(["iso2", "year"])
     region_to_countries = get_region_mapping(
-        snakemake.input.region_mapping, source="REMIND-EU", target="PyPSA-EUR"
+        snakemake.input.region_mapping, source="model_region", target="country"
     )
     configured_countries = set(snakemake.params.countries)
 

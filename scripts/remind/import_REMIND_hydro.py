@@ -16,9 +16,9 @@ from _helpers import (
     configure_logging,
     mock_snakemake,
 )
-from rpycpl.io import RemindLoader
-from rpycpl.io.remind_symbols import load_frame, load_symbol_specs
-from rpycpl.transforms.mapping import read_region_map as get_region_mapping
+from iampypsa.io import RemindLoader
+from iampypsa.io.remind_symbols import load_frame, load_symbol_specs
+from iampypsa.transforms.mapping import read_region_map as get_region_mapping
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ if __name__ == "__main__":
     configure_logging(snakemake)
 
     logger.info(
-        "Loading REMIND hydro capacity and generation data from the rpycpl symbol config..."
+        "Loading REMIND hydro capacity and generation data from the iampypsa symbol config..."
     )
 
     loader = RemindLoader(snakemake.input["remind_data"])
@@ -63,7 +63,7 @@ if __name__ == "__main__":
     )
 
     region_mapping = get_region_mapping(
-        snakemake.input["region_mapping"], source="PyPSA-EUR", target="REMIND-EU"
+        snakemake.input["region_mapping"], source="country", target="model_region"
     )
     mapped_regions = (
         pd.Series(region_mapping, name="region").explode().dropna().unique()

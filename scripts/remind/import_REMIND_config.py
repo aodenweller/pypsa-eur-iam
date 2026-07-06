@@ -4,7 +4,7 @@ CLI script to generate a scenario-specific config for REMIND-PyPSA-Eur coupling.
 Must be run before invoking Snakemake.
 
 Usage:
-    python scripts/import_REMIND_config.py \
+    python scripts/remind/import_REMIND_config.py \
         --gdx resources/{scen}/i{iter}/REMIND2PyPSAEUR.gdx \
         --config-remind config/config.remind.yaml
         --config-changes-file config/config.remind_changes.yaml \
@@ -21,7 +21,7 @@ from pathlib import Path
 import yaml
 
 sys.path.insert(0, str(Path(__file__).parent))
-from rpycpl.io import read_gdx_symbol
+from iampypsa.io import read_gdx_symbol
 
 logger = logging.getLogger(__name__)
 

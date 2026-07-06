@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 import pypsa
 import xarray as xr
-from rpycpl.transforms.mapping import read_region_map as get_region_mapping
+from iampypsa.transforms.mapping import read_region_map as get_region_mapping
 
 from scripts.add_electricity import (
     add_co2_emissions,
@@ -142,7 +142,7 @@ def _to_scalar_region(value):
 
 def _get_country_to_region(region_mapping_fn: str) -> pd.Series:
     """Return a Series mapping PyPSA-EUR country codes to scalar REMIND-EU region labels."""
-    mapping = get_region_mapping(region_mapping_fn, source="PyPSA-EUR", target="REMIND-EU")
+    mapping = get_region_mapping(region_mapping_fn, source="country", target="model_region")
     return pd.Series(mapping).map(_to_scalar_region)
 
 
@@ -635,7 +635,7 @@ def attach_hydro_remind(
     hydro_assets = pd.concat([ror, hydro], axis=0)
     hydro_assets["country"] = hydro_assets["bus"].map(n.buses.country)
 
-    region_mapping = get_region_mapping(region_mapping_fn, source="PyPSA-EUR", target="REMIND-EU")
+    region_mapping = get_region_mapping(region_mapping_fn, source="country", target="model_region")
     country_to_region = pd.Series(region_mapping).map(_to_scalar_region)
     hydro_assets["region"] = hydro_assets["country"].map(country_to_region)
 

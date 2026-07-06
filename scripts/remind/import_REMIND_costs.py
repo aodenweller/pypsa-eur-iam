@@ -22,10 +22,10 @@ import logging
 import pandas as pd
 import pypsa
 from _helpers import configure_logging
-from rpycpl import RemindGdxAdapter, RemindIamcAdapter
-from rpycpl.io import RemindLoader
-from rpycpl.io.remind_symbols import load_symbol_specs
-from rpycpl.transforms.costs import (
+from iampypsa import RemindGdxAdapter, RemindIamcAdapter
+from iampypsa.io import RemindLoader
+from iampypsa.io.remind_symbols import load_symbol_specs
+from iampypsa.transforms.costs import (
     add_discount_rate,
     build_baseline_overrides,
     build_mapped_overrides,
@@ -33,7 +33,7 @@ from rpycpl.transforms.costs import (
     convert_investment_to_input_capacity_basis,
     apply_overrides,
 )
-from rpycpl.transforms.mapping import read_region_map as get_region_mapping
+from iampypsa.transforms.mapping import read_region_map as get_region_mapping
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ if __name__ == "__main__":
     # When run directly, Python adds scripts/ to sys.path, not the repo root.
     # scripts.process_cost_data must be imported as a package from the repo root,
     # so we insert it explicitly. Not needed under Snakemake (which sets up sys.path correctly).
-    sys.path.insert(0, str(Path(__file__).parents[1]))
+    sys.path.insert(0, str(Path(__file__).parents[2]))
     import scripts.process_cost_data as process_cost_data
     from scripts.process_cost_data import prepare_costs
 
@@ -69,7 +69,7 @@ if __name__ == "__main__":
 
     countries = set(snakemake.config["countries"])
     full_mapping = get_region_mapping(
-        snakemake.input["region_mapping"], source="PyPSA-EUR", target="REMIND-EU"
+        snakemake.input["region_mapping"], source="country", target="model_region"
     )
     mapped_regions = {
         r for c, rs in full_mapping.items() if c in countries for r in rs if r
@@ -85,7 +85,7 @@ if __name__ == "__main__":
     adapter_cls = REMIND_ADAPTERS[loader.backend]
     adapter = adapter_cls(
         loader, symbols, region_map={}, config={},
-        remind_regions=sorted(mapped_regions),
+        model_regions=sorted(mapped_regions),
     )
     remind_long = adapter.extract_cost_parameters(int(year))
 

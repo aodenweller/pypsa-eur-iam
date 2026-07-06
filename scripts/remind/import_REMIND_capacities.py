@@ -1,7 +1,7 @@
 """
 Read installed-capacity targets from REMIND and export them as PyPSA-Eur lower bounds.
 
-Thin wrapper over ``rpycpl.transforms.capacities.build_capacity_targets``: reads the capacity
+Thin wrapper over ``iampypsa.transforms.capacities.build_capacity_targets``: reads the capacity
 spec (unit conversion handled by the spec), applies any ``consolidation`` block declared on the
 spec (VRE-variant merge, battery scaling, link output→input adjustment), and maps model tech
 tokens to PyPSA-Eur carriers.
@@ -18,10 +18,10 @@ from _helpers import (
     get_technology_mapping,
     mock_snakemake,
 )
-from rpycpl.io import RemindLoader
-from rpycpl.io.remind_symbols import load_symbol_specs
-from rpycpl.transforms.capacities import build_capacity_targets
-from rpycpl.transforms.mapping import read_region_map as get_region_mapping
+from iampypsa.io import RemindLoader
+from iampypsa.io.remind_symbols import load_symbol_specs
+from iampypsa.transforms.capacities import build_capacity_targets
+from iampypsa.transforms.mapping import read_region_map as get_region_mapping
 
 logger = logging.getLogger(__name__)
 
@@ -36,11 +36,11 @@ if __name__ == "__main__":
         )
 
     configure_logging(snakemake)
-    logger.info("Building REMIND capacity targets via rpycpl.build_capacity_targets")
+    logger.info("Building REMIND capacity targets via iampypsa.build_capacity_targets")
 
     countries = set(snakemake.params["countries"])
     region_mapping = get_region_mapping(
-        snakemake.input["region_mapping"], source="PyPSA-EUR", target="REMIND-EU"
+        snakemake.input["region_mapping"], source="country", target="model_region"
     )
     mapped_regions = sorted({r for c, rs in region_mapping.items() if c in countries for r in rs if r})
     tech_map = get_technology_mapping(snakemake.input["technology_cost_mapping"])

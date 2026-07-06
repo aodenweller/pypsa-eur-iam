@@ -10,10 +10,10 @@ coupling package via ``CouplingAdapter.build_co2_prices(years=...)``.
 import logging
 
 from _helpers import configure_logging, mock_snakemake
-from rpycpl.adapters import RemindGdxAdapter, RemindIamcAdapter
-from rpycpl.io import RemindLoader
-from rpycpl.io.remind_symbols import load_frame, load_symbol_specs
-from rpycpl.transforms.mapping import read_region_map as get_region_mapping
+from iampypsa.adapters import RemindGdxAdapter, RemindIamcAdapter
+from iampypsa.io import RemindLoader
+from iampypsa.io.remind_symbols import load_frame, load_symbol_specs
+from iampypsa.transforms.mapping import read_region_map as get_region_mapping
 
 logger = logging.getLogger(__name__)
 
@@ -28,11 +28,11 @@ if __name__ == "__main__":
         )
 
     configure_logging(snakemake)
-    logger.info("Building REMIND CO2 price pathway from the rpycpl symbol config")
+    logger.info("Building REMIND CO2 price pathway from the iampypsa symbol config")
 
     countries = set(snakemake.config["countries"])
     full_mapping = get_region_mapping(
-        snakemake.input["region_mapping"], source="PyPSA-EUR", target="REMIND-EU"
+        snakemake.input["region_mapping"], source="country", target="model_region"
     )
     mapped_regions = sorted(
         {r for c, rs in full_mapping.items() if c in countries for r in rs if r}
@@ -53,7 +53,7 @@ if __name__ == "__main__":
     # Build the pathway via the coupling package so the transform chain lives in one place.
     adapter_cls = RemindIamcAdapter if loader.backend == "iamc" else RemindGdxAdapter
     adapter = adapter_cls(
-        loader, symbols, region_map={}, config={}, remind_regions=mapped_regions
+        loader, symbols, region_map={}, config={}, model_regions=mapped_regions
     )
     co2_price = adapter.build_co2_prices(years=coupled_years)  # tC -> tCO2 applied here
     co2_price = (

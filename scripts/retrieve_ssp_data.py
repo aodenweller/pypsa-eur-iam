@@ -1,6 +1,6 @@
 """Retrieve SSP population and GDP projections from the IIASA scenario database.
 
-Thin wrapper over ``rpycpl.io.ssp.fetch_ssp_data``: pulls country-level Population and GDP|PPP
+Thin wrapper over ``iampypsa.io.ssp.fetch_ssp_data``: pulls country-level Population and GDP|PPP
 time series for the configured SSP scenario/models from the IIASA SSP REST API and saves them
 as CSVs used by ``downscale_REMIND_demand`` to disaggregate REMIND regional demand. Data is at
 5-year intervals matching REMIND's time resolution — no interpolation is applied.
@@ -14,7 +14,7 @@ Outputs
 import logging
 
 from _helpers import configure_logging, mock_snakemake
-from rpycpl.io.ssp import fetch_ssp_data
+from iampypsa.io.ssp import fetch_ssp_data
 
 logger = logging.getLogger(__name__)
 

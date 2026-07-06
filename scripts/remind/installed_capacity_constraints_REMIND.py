@@ -9,7 +9,7 @@ import logging
 import pandas as pd
 import pypsa
 import xarray as xr
-from rpycpl.transforms.mapping import read_region_map as get_region_mapping
+from iampypsa.transforms.mapping import read_region_map as get_region_mapping
 
 from scripts._helpers import get_technology_mapping
 
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 def _build_country_to_region_map(fp_region_mapping: str) -> pd.Series:
     mapping = get_region_mapping(
-        fp_region_mapping, source="PyPSA-EUR", target="REMIND-EU", flatten=True
+        fp_region_mapping, source="country", target="model_region", flatten=True
     )
     return pd.Series(mapping)
 
