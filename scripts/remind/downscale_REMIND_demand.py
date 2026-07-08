@@ -3,8 +3,9 @@ Disaggregate REMIND regional demand to country-level demand.
 
 Stage 2 of the demand pipeline. Splits each (year, region, sector) row (Stage-1 output of
 ``import_REMIND_demand``) across constituent countries using a sector-weighted blend of SSP
-population and GDP shares (single-country regions are a no-op). Demand attributed to unconfigured
-countries is excluded (warned above 1% in the iampypsa function).
+population and GDP shares (single-country regions are a no-op). Sectors without configured
+weights are folded into ``AC`` first (see ``fold_unconfigured_sectors_into_ac``). Demand
+attributed to unconfigured countries is excluded (warned above 1% in the iampypsa function).
 """
 
 import logging
@@ -15,6 +16,27 @@ from iampypsa.downscale.demand import disaggregate_demand_to_country
 from iampypsa.transforms.mapping import read_region_map as get_region_mapping
 
 logger = logging.getLogger(__name__)
+
+
+def fold_unconfigured_sectors_into_ac(loads: pd.DataFrame, sector_weights: dict) -> pd.DataFrame:
+    """Re-label any sector absent from ``sector_weights`` as ``AC`` and re-aggregate.
+
+    A new REMIND FE sector without configured weights would otherwise crash downscaling or be
+    silently dropped later — falls back to the general AC pool instead.
+    """
+    unconfigured = sorted(set(loads["sector"]) - set(sector_weights))
+    if not unconfigured:
+        return loads
+    logger.info(
+        "Sector(s) %s not present in sector_weights; folding into AC.", unconfigured
+    )
+    loads = loads.copy()
+    loads.loc[loads["sector"].isin(unconfigured), "sector"] = "AC"
+    return (
+        loads.groupby(["year", "region", "sector", "unit"], as_index=False)["value"]
+        .sum()
+        .sort_values(["year", "region", "sector"])
+    )
 
 
 if __name__ == "__main__":
@@ -43,11 +65,12 @@ if __name__ == "__main__":
     )
 
     loads = sectoral_load[sectoral_load["year"].isin(years)]
+    loads = fold_unconfigured_sectors_into_ac(loads, snakemake.params.sector_weights)
+    proxies = {"population": pop, "gdp": gdp}
     result = disaggregate_demand_to_country(
         loads,
         region_to_countries,
-        pop,
-        gdp,
+        proxies,
         snakemake.params.sector_weights,
         configured_countries,
     )
