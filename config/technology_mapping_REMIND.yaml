@@ -1,0 +1,78 @@
+# Technology mapping between IAM (REMIND) and PyPSA-Eur. Used for:
+#   (1) costs:      investment, FOM, VOM, efficiency, lifetime, fuel, CO2 intensity
+#   (2) capacities: capacity targets for PyPSA-Eur, if configured
+#
+# Every top-level key is a PyPSA-Eur carrier name, mapped to a dict with:
+#   source      (required) "IAM" or "PyPSA" — where this technology's parameters come from.
+#   iam_name    (optional) REMIND/IAM technology name (see remind_symbols_mif.yaml); needed
+#               only when it differs from this entry's own key. Used for both costs (1) and
+#               capacity targets (2).
+#   overrides   (optional) {parameter: source} per-parameter exceptions to source:, where
+#               source is "IAM", "PyPSA", or a fixed {value: <number>, unit: <str>, comment: <str>}.
+
+# --- Conventional generators: Technologies with new REMIND names
+gas-ocgt: {source: IAM}
+gas-ccgt: {source: IAM}
+gas-ccgt-ccs: {source: IAM}
+gas-chp: {source: IAM}
+coal-pulverised: {source: IAM}
+coal-igcc: {source: IAM}
+coal-igcc-ccs: {source: IAM}
+coal-chp: {source: IAM}
+oil: {source: IAM}
+biomass-chp: {source: IAM}
+biomass-igcc: {source: IAM}
+biomass-igcc-ccs:
+  source: IAM
+  overrides:
+    CO2 intensity: {value: 0, unit: "tCO2/MWh_th", comment: "TODO: carbon-negative in REMIND, but that makes PyPSA unbounded"}
+nuclear: {source: IAM}
+
+# --- Renewable technologies: Original PyPSA-Eur carrier names
+# These PyPSA-Eur names cannot be changed and therefore require "iam_name"
+solar: {source: IAM, iam_name: solar-pv}
+# solar-utility is required to overwrite costs in process_cost_data.py
+solar-utility: {source: IAM, iam_name: solar-pv}
+onwind: {source: IAM, iam_name: wind-onshore}
+# Using offwind-ac as the single technology for all offshore wind, dropping offwind-dc
+# offwind is still required by add_electricity.py
+offwind: {source: IAM, iam_name: wind-offshore}
+offwind-ac: {source: IAM, iam_name: wind-offshore}
+hydro: {source: IAM}
+# ror is grouped with hydro for REMIND's single "hydro" capacity target
+ror: {source: IAM, iam_name: hydro}
+# PHS is a separate storage technology 
+PHS: {source: PyPSA}
+
+# --- Wind connection cost technologies
+# REMIND's offwind investment already includes connection costs
+offwind-ac-connection-submarine:
+  source: PyPSA
+  overrides:
+    investment: {value: 0, unit: "USD/MW/km", comment: "Connection costs already included in REMIND offwind investment"}
+    FOM: {value: 0, unit: "%/year", comment: "Connection costs already included in REMIND offwind investment"}
+offwind-ac-connection-underground:
+  source: PyPSA
+  overrides:
+    investment: {value: 0, unit: "USD/MW/km", comment: "Connection costs already included in REMIND offwind investment"}
+    FOM: {value: 0, unit: "%/year", comment: "Connection costs already included in REMIND offwind investment"}
+offwind-ac-station:
+  source: PyPSA
+  overrides:
+    investment: {value: 0, unit: "USD/MW", comment: "Connection costs already included in REMIND offwind investment"}
+    FOM: {value: 0, unit: "%/year", comment: "Connection costs already included in REMIND offwind investment"}
+
+# --- Grid infrastructure: Set by PyPSA, not explicitly represented in REMIND
+# TODO: Check if costs are reported in mif
+HVAC overhead: {source: PyPSA}
+HVDC overhead: {source: PyPSA}
+HVDC submarine: {source: PyPSA}
+HVDC inverter pair: {source: PyPSA}
+
+# --- Hydrogen and battery storage
+electrolysis: {source: IAM}
+fuel cell: {source: IAM, iam_name: hydrogen-turbine}
+battery inverter: {source: PyPSA, iam_name: battery-inverter}
+battery storage: {source: PyPSA}
+hydrogen storage underground: {source: PyPSA}
+hydrogen storage tank type 1 including compressor: {source: PyPSA}

@@ -41,7 +41,7 @@ if __name__ == "__main__":
     countries = set(snakemake.params["countries"])
     region_mapping = get_region_mapping(source="country", target="model_region")
     mapped_regions = sorted({r for c, rs in region_mapping.items() if c in countries for r in rs if r})
-    tech_map = get_technology_mapping(snakemake.input["technology_cost_mapping"])
+    tech_map = get_technology_mapping(snakemake.input["technology_mapping"])
 
     loader = RemindLoader(snakemake.input["remind_data"])
     symbols = load_symbol_specs(backend=loader.backend)

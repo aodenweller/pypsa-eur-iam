@@ -165,13 +165,13 @@ electricity:
       - solar
       - onwind
       - offwind-ac
-      - ocgt
-      - ccgt
-      - ccgt-ccs
+      - gas-ocgt
+      - gas-ccgt
+      - gas-ccgt-ccs
       - gas-chp
       - nuclear
       - oil
-      - coal-pc
+      - coal-pulverised
       - coal-igcc
       - coal-igcc-ccs
       - coal-chp
@@ -182,13 +182,13 @@ electricity:
   powerplants_filter: false
   # Add powerplants at all locations (p_nom=0; for technologies with no existing plants)
   everywhere_powerplants:
-    - ocgt
+    - gas-ocgt
     - nuclear
     - oil
-    - ccgt
+    - gas-ccgt
     - gas-chp
-    - ccgt-ccs
-    - coal-pc
+    - gas-ccgt-ccs
+    - coal-pulverised
     - coal-igcc
     - coal-igcc-ccs
     - coal-chp
@@ -196,13 +196,13 @@ electricity:
     - biomass-igcc
     - biomass-igcc-ccs
   conventional_carriers:
-    - ocgt
-    - ccgt
-    - ccgt-ccs
+    - gas-ocgt
+    - gas-ccgt
+    - gas-ccgt-ccs
     - gas-chp
     - nuclear
     - oil
-    - coal-pc
+    - coal-pulverised
     - coal-igcc
     - coal-igcc-ccs
     - coal-chp
@@ -256,7 +256,7 @@ solving:
     # Inject constraints for minimum capacities
     custom_extra_functionality: ../scripts/remind/installed_capacity_constraints_REMIND.py
   gurobi_hpc_tunnel:
-    use_tunnel: true
+    use_tunnel: false
     tunnel_port: 26998
     login_node: '02'
     timeout_s: 15

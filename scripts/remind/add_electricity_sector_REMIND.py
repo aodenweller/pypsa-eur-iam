@@ -1027,11 +1027,6 @@ if __name__ == "__main__":
         params.exclude_carriers,
     )
 
-    # load_and_aggregate_powerplants's carrier_dict maps "ccgt"→"CCGT" and "ocgt"→"OCGT"
-    # (uppercase). Fueltype values for all other REMIND carriers are pre-set in
-    # adjust_powerplants_REMIND.py and pass through to_pypsa_names() as-is (lowercase).
-    ppl["carrier"] = ppl["carrier"].replace({"CCGT": "ccgt", "OCGT": "ocgt"})
-
     # Overwrite plant-specific efficiencies with REMIND efficiencies
     ppl = overwrite_ppl_efficiency_with_costs(ppl, costs)
 
@@ -1075,10 +1070,8 @@ if __name__ == "__main__":
     else:
         fuel_price = None
 
-    # add_electricity.py's add_co2_emissions() splits carrier names on "-" to get the
-    # suptech prefix (e.g. "coal-PC" → "coal") and looks that up in the costs index.
-    # REMIND cost entries use full carrier names, so we add alias rows for each
-    # suptech prefix that is missing from the index.
+    # add_co2_emissions() (called inside attach_conventional_generators) hard-looks-up each
+    # carrier's "-" prefix; add throwaway alias rows to avoid KeyError (overwritten below).
     costs_for_attach = costs.copy()
     for carrier in list(costs.index):
         suptech = carrier.split("-")[0]
@@ -1256,10 +1249,8 @@ if __name__ == "__main__":
             sorted(df.rename(columns=rename_map).columns), axis=1
         )
 
-    # add_co2_emissions() in add_electricity.py uses only the suptech prefix (first
-    # part before "-") to look up CO2 intensity, so all biomass carriers would
-    # inherit biomass-chp's value of 0.  Override with the full-name lookup so
-    # that biomass-igcc-ccs (negative CO2 intensity from BECCS) is set correctly.
+    # Overwrite with full-name CO2 intensity (the suptech-prefix pass above conflates e.g.
+    # biomass-chp and biomass-igcc-ccs, whose BECCS makes it carbon-negative).
     for carrier in costs.index:
         if carrier in n.carriers.index and not pd.isna(costs.at[carrier, "CO2 intensity"]):
             n.carriers.at[carrier, "co2_emissions"] = costs.at[carrier, "CO2 intensity"]
