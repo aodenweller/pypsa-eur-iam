@@ -89,7 +89,6 @@ rule import_REMIND_demand:
         countries=config_provider("countries"),
     input:
         remind_data=ITERATION_RESOURCES + _REMIND_INPUT_FILENAME,
-        region_mapping="config/regionmapping_21_EU11.csv",
     output:
         sectoral_load=ITERATION_RESOURCES + "sectoral_load.csv",
     log:
@@ -102,17 +101,23 @@ rule import_REMIND_demand:
         scripts("remind/import_REMIND_demand.py")
 
 
-# Input 1b: Disaggregate REMIND regional demand to country level using SSP population and GDP weights.
+# Input 1b: Disaggregate REMIND regional demand to country level using SSP population/GDP shares
+# (most sectors) and HDD/CDD-weighted degree-day shares (heatpump/resistive).
 rule downscale_REMIND_demand:
     params:
         sector_weights=config_provider("remind_coupling", "demand_downscaling", "sector_weights"),
         countries=config_provider("countries"),
         years=config_provider("remind_coupling", "years"),
+        degree_days=config_provider("remind_coupling", "demand_downscaling", "degree_days"),
     input:
         sectoral_load=ITERATION_RESOURCES + "sectoral_load.csv",
         population="data/ssp/population.csv",
         gdp="data/ssp/gdp.csv",
-        region_mapping="config/regionmapping_21_EU11.csv",
+        # Single-year (2060, SSP2) placeholder test data, not yet a retrieved dataset
+        # (no retrieve_* rule exists for it, unlike retrieve_ssp_data for population/gdp).
+        # TODO: Update with full data
+        hdd="data/climbed_test/climbed_hdd_2060_ssp2.csv",
+        cdd="data/climbed_test/climbed_cdd_2060_ssp2.csv",
         remind_data=ITERATION_RESOURCES + _REMIND_INPUT_FILENAME,
     output:
         sectoral_load_country=ITERATION_RESOURCES + "sectoral_load_country.csv",
@@ -133,7 +138,6 @@ rule import_REMIND_capacities:
         countries=config_provider("countries"),
     input:
         remind_data=ITERATION_RESOURCES + _REMIND_INPUT_FILENAME,
-        region_mapping="config/regionmapping_21_EU11.csv",
         technology_cost_mapping="config/technology_cost_mapping.csv",
     output:
         capacities=ITERATION_RESOURCES + "installed_capacities.csv",
@@ -150,7 +154,6 @@ rule import_REMIND_capacities:
 rule import_REMIND_co2price:
     input:
         remind_data=ITERATION_RESOURCES + _REMIND_INPUT_FILENAME,
-        region_mapping="config/regionmapping_21_EU11.csv",
     output:
         co2_price=ITERATION_RESOURCES + "co2_price.csv",
     log:
@@ -172,7 +175,6 @@ rule import_REMIND_costs:
         original_costs=lambda w: COSTS_DATASET["folder"] + f"/costs_{max(2020, min(int(w['year_REMIND']), 2050))}.csv",
         network=resources("networks/base_s.nc"),
         custom_costs=config_provider("costs", "custom_cost_fn"),
-        region_mapping="config/regionmapping_21_EU11.csv",
         technology_cost_mapping="config/technology_cost_mapping.csv",
         remind_data=ITERATION_RESOURCES + _REMIND_INPUT_FILENAME,
     output:
@@ -193,7 +195,6 @@ rule import_REMIND_costs:
 rule import_REMIND_hydro:
     input:
         remind_data=ITERATION_RESOURCES + _REMIND_INPUT_FILENAME,
-        region_mapping="config/regionmapping_21_EU11.csv",
     output:
         hydro_targets=ITERATION_RESOURCES + "hydro_targets.csv",
     log:
@@ -212,7 +213,6 @@ rule adjust_powerplants_REMIND:
     input:
         powerplants=resources("powerplants_s_{clusters}.csv"),
         capacities=ITERATION_RESOURCES + "installed_capacities.csv",
-        region_mapping="config/regionmapping_21_EU11.csv",
         technology_mapping="config/technology_cost_mapping.csv",
     output:
         powerplants_adjusted=SCENARIO_RESOURCES + "i{iter_REMIND}/y{year_REMIND}/powerplants_adjusted_s_{clusters}.csv",
@@ -318,7 +318,6 @@ rule add_electricity_sector_REMIND:
         cop_profiles=resources("cop_profiles_base_s_{clusters}_2030.nc"),  # Use arbitrary planning_horizons wildcard
         hourly_water_heat_demand_total=resources("hourly_water_heat_demand_total_base_s_{clusters}.nc"),  # From new rule above
         # REMIND input files
-        region_mapping="config/regionmapping_21_EU11.csv",
         technology_cost_mapping="config/technology_cost_mapping.csv",
         sectoral_load_country=ITERATION_RESOURCES + "sectoral_load_country.csv",
         hydro_targets=ITERATION_RESOURCES + "hydro_targets.csv",
@@ -408,7 +407,6 @@ rule solve_network_REMIND:
         network=ITERATION_RESOURCES + "y{year_REMIND}/networks/base_s_{clusters}_elec_{opts}.nc",
         # REMIND input files for capacity constraint
         capacities=ITERATION_RESOURCES + "installed_capacities.csv",
-        region_mapping="config/regionmapping_21_EU11.csv",
         technology_cost_mapping="config/technology_cost_mapping.csv",
     output:
         network=ITERATION_RESULTS + "y{year_REMIND}/networks/base_s_{clusters}_elec_{opts}.nc",
@@ -461,7 +459,6 @@ rule export_to_REMIND:
         remind_settings=config_provider("remind_coupling"),
     input:
         networks=rules.solve_all_networks_REMIND.input["networks"],
-        region_mapping="config/regionmapping_21_EU11.csv",
         technology_cost_mapping="config/technology_cost_mapping.csv",
         carrier_mapping="config/carrier_to_remind.yaml",
     output:

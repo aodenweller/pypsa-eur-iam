@@ -22,7 +22,7 @@ import pandas as pd
 import pypsa
 import yaml
 from _helpers import configure_logging
-from iampypsa.transforms.mapping import read_region_map as get_region_mapping
+from iampypsa.couplers.remind import read_region_map as get_region_mapping
 from scipy.stats import zscore
 
 logger = logging.getLogger(__name__)
@@ -130,9 +130,7 @@ def load_mappings(snakemake):
     }
     sector_carriers = cfg.get("sectors", {})
 
-    region_mapping = get_region_mapping(
-        snakemake.input["region_mapping"], source="country", target="model_region", flatten=True
-    )
+    region_mapping = get_region_mapping(source="country", target="model_region", flatten=True)
     return map_to_remind, sector_carriers, region_mapping
 
 

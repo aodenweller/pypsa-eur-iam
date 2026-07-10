@@ -39,7 +39,6 @@ For now, see the following key files:
 - `Snakefile_REMIND`: Main snakemake file for the coupling with IAMs, currently configured for REMIND.
 - `REMIND_coupling.smk`: Contains all new rules.
 - `config/config.remind.yaml`: Config file for REMIND coupling
-- `config/regionmapping_21_EU11.csv`: Region mapping file from REMIND to ISO.
 - `config/technology_cost_mapping.csv`: File to map all costs from REMIND output, with a few PyPSA fallbacks.
 - `scripts/remind`: All scripts for the new rules.
 

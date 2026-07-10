@@ -9,17 +9,15 @@ import logging
 import pandas as pd
 import pypsa
 import xarray as xr
-from iampypsa.transforms.mapping import read_region_map as get_region_mapping
+from iampypsa.couplers.remind import read_region_map as get_region_mapping
 
 from scripts._helpers import get_technology_mapping
 
 logger = logging.getLogger(__name__)
 
 
-def _build_country_to_region_map(fp_region_mapping: str) -> pd.Series:
-    mapping = get_region_mapping(
-        fp_region_mapping, source="country", target="model_region", flatten=True
-    )
+def _build_country_to_region_map() -> pd.Series:
+    mapping = get_region_mapping(source="country", target="model_region", flatten=True)
     return pd.Series(mapping)
 
 
@@ -219,7 +217,7 @@ def installed_capacity_constraints_REMIND(n, snapshots, snakemake):
     stores_enabled = bool(capacity_cfg.get("stores", True))
     fixed = bool(capacity_cfg.get("fixed", False))
 
-    country_to_region = _build_country_to_region_map(snakemake.input["region_mapping"])
+    country_to_region = _build_country_to_region_map()
     carrier_to_group = _build_carrier_to_technology_group_map(
         snakemake.input["technology_cost_mapping"]
     )

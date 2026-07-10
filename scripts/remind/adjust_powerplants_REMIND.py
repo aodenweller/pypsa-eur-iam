@@ -12,7 +12,7 @@ import logging
 
 import pandas as pd
 from _helpers import configure_logging, mock_snakemake
-from iampypsa.transforms.mapping import read_region_map as get_region_mapping
+from iampypsa.couplers.remind import read_region_map as get_region_mapping
 
 logger = logging.getLogger(__name__)
 
@@ -153,9 +153,7 @@ if __name__ == "__main__":
     capacities = pd.read_csv(snakemake.input["capacities"])
     fp_mapping = snakemake.input["technology_mapping"]
 
-    region_mapping = get_region_mapping(
-        snakemake.input["region_mapping"], source="country", target="model_region", flatten=True
-    )
+    region_mapping = get_region_mapping(source="country", target="model_region", flatten=True)
 
     ppl = ppl.loc[ppl["Country"].isin(snakemake.params["countries"])].copy()
     ppl = filter_decommissioned_powerplants(ppl, year)

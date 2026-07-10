@@ -4,16 +4,16 @@ Import a year-level CO2 price pathway from REMIND, per REMIND region.
 Reads the CO2-price symbol (resolved from the central symbol config; tC->tCO2 applied by
 ``load_frame`` via the symbol's ``to_unit``), filters to the mapped REMIND regions and reindexes
 to REMIND's coupled-year set (missing filled with 0). The extract/convert chain lives in the
-coupling package via ``CouplingAdapter.build_co2_prices(years=...)``.
+coupling package via ``Coupler.build_co2_prices(years=...)``.
 """
 
 import logging
 
 from _helpers import configure_logging, mock_snakemake
-from iampypsa.adapters import RemindGdxAdapter, RemindIamcAdapter
+from iampypsa import RemindGdxCoupler, RemindIamcCoupler
+from iampypsa.couplers.remind import read_region_map as get_region_mapping
 from iampypsa.io import RemindLoader
 from iampypsa.io.remind_symbols import load_frame, load_symbol_specs
-from iampypsa.transforms.mapping import read_region_map as get_region_mapping
 
 logger = logging.getLogger(__name__)
 
@@ -31,9 +31,7 @@ if __name__ == "__main__":
     logger.info("Building REMIND CO2 price pathway from the iampypsa symbol config")
 
     countries = set(snakemake.config["countries"])
-    full_mapping = get_region_mapping(
-        snakemake.input["region_mapping"], source="country", target="model_region"
-    )
+    full_mapping = get_region_mapping(source="country", target="model_region")
     mapped_regions = sorted(
         {r for c, rs in full_mapping.items() if c in countries for r in rs if r}
     )
@@ -51,11 +49,11 @@ if __name__ == "__main__":
         coupled_years = sorted(int(y) for y in snakemake.config["remind_coupling"]["years"])
 
     # Build the pathway via the coupling package so the transform chain lives in one place.
-    adapter_cls = RemindIamcAdapter if loader.backend == "iamc" else RemindGdxAdapter
-    adapter = adapter_cls(
+    coupler_cls = RemindIamcCoupler if loader.backend == "iamc" else RemindGdxCoupler
+    coupler = coupler_cls(
         loader, symbols, region_map={}, config={}, model_regions=mapped_regions
     )
-    co2_price = adapter.build_co2_prices(years=coupled_years)  # tC -> tCO2 applied here
+    co2_price = coupler.build_co2_prices(years=coupled_years)  # tC -> tCO2 applied here
     co2_price = (
         co2_price.rename(columns={"value": "co2_price"})[
             ["region", "year", "co2_price"]

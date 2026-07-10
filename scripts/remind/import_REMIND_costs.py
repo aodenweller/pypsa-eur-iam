@@ -22,23 +22,23 @@ import logging
 import pandas as pd
 import pypsa
 from _helpers import configure_logging
-from iampypsa import RemindGdxAdapter, RemindIamcAdapter
+from iampypsa import RemindGdxCoupler, RemindIamcCoupler
+from iampypsa.couplers.remind import read_region_map as get_region_mapping
 from iampypsa.io import RemindLoader
 from iampypsa.io.remind_symbols import load_symbol_specs
 from iampypsa.transforms.costs import (
     add_discount_rate,
-    build_baseline_overrides,
-    build_mapped_overrides,
+    build_pypsa_techdata,
+    build_iam_techdata,
     build_set_value_overrides,
     convert_investment_to_input_capacity_basis,
     apply_overrides,
 )
-from iampypsa.transforms.mapping import read_region_map as get_region_mapping
 
 logger = logging.getLogger(__name__)
 
-# Which adapter handles each REMIND output backend (selected from loader.backend below).
-REMIND_ADAPTERS = {"gdx": RemindGdxAdapter, "iamc": RemindIamcAdapter}
+# Which coupler handles each REMIND output backend (selected from loader.backend below).
+REMIND_COUPLERS = {"gdx": RemindGdxCoupler, "iamc": RemindIamcCoupler}
 
 
 if __name__ == "__main__":
@@ -68,9 +68,7 @@ if __name__ == "__main__":
     logger.info("Building REMIND-adjusted costs for year %s", year)
 
     countries = set(snakemake.config["countries"])
-    full_mapping = get_region_mapping(
-        snakemake.input["region_mapping"], source="country", target="model_region"
-    )
+    full_mapping = get_region_mapping(source="country", target="model_region")
     mapped_regions = {
         r for c, rs in full_mapping.items() if c in countries for r in rs if r
     }
@@ -82,12 +80,12 @@ if __name__ == "__main__":
 
     loader = RemindLoader(snakemake.input["remind_data"])
     symbols = load_symbol_specs(backend=loader.backend)
-    adapter_cls = REMIND_ADAPTERS[loader.backend]
-    adapter = adapter_cls(
+    coupler_cls = REMIND_COUPLERS[loader.backend]
+    coupler = coupler_cls(
         loader, symbols, region_map={}, config={},
         model_regions=sorted(mapped_regions),
     )
-    remind_long = adapter.extract_cost_parameters(int(year))
+    remind_long = coupler.extract_cost_parameters(int(year))
 
     # btin (battery-inverter) round-trip efficiency: REMIND reports the one-way inverter
     # efficiency; PyPSA-Eur's two-link battery needs it squared.
@@ -104,14 +102,14 @@ if __name__ == "__main__":
 
     # REMIND-derived overrides keep their region dimension; non-regional overrides are
     # the same for every region (PyPSA-Eur baseline values and fixed-value entries).
-    regional_mapped_overrides = build_mapped_overrides(
+    regional_mapped_overrides = build_iam_techdata(
         technology_mapping, remind_long,
         tech_col=_tech_col, ref_col="reference", param_col="parameter",
         source_col=_source_col, model_value="REMIND", out_source="REMIND-EU",
     )
     non_regional_overrides = pd.concat(
         [
-            build_baseline_overrides(
+            build_pypsa_techdata(
                 technology_mapping, baseline_raw,
                 tech_col=_tech_col, source_col=_source_col, baseline_value="PyPSA-Eur",
             ),
@@ -124,7 +122,7 @@ if __name__ == "__main__":
         ignore_index=True,
     )
 
-    discount_rates = adapter.discount_rates(int(year))
+    discount_rates = coupler.discount_rates(int(year))
     logger.info(
         "Regional REMIND discount rates for year %s: %s",
         year,
