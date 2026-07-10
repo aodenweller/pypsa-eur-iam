@@ -31,11 +31,9 @@ def _build_carrier_to_technology_group_map(fp_technology_mapping: str) -> pd.Ser
 
     # ror and hydro are summed together against REMIND's single "hydro" target
     carrier_to_group["ror"] = "hydro"
-    # offwind-ac is the network carrier; REMIND capacity target is keyed on "offwind"
-    carrier_to_group["offwind-ac"] = "offwind"
 
     # Manual mappings for Links/Stores whose network carrier names differ from
-    # the PyPSA-Eur technology names used in technology_cost_mapping.csv (and
+    # the PyPSA-Eur technology names used in technology_mapping_REMIND.yaml (and
     # thus in installed_capacities.csv).
     carrier_to_group.update({
         "H2 Electrolysis": "electrolysis",
@@ -221,7 +219,7 @@ def installed_capacity_constraints_REMIND(n, snapshots, snakemake):
 
     country_to_region = _build_country_to_region_map(snakemake.input["region_mapping"])
     carrier_to_group = _build_carrier_to_technology_group_map(
-        snakemake.input["technology_cost_mapping"]
+        snakemake.input["technology_mapping"]
     )
 
     logger.info(

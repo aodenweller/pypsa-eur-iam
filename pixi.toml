@@ -181,7 +181,7 @@ test = ["test"]
 
 [pypi-dependencies]
 gamspy = ">=1.22.0"
-# Temporary: pointing at personal fork until PR is merged into pik-piam/iam-pypsa-coupling
-iam-pypsa-coupling = { git = "https://github.com/aodenweller/iam-pypsa-coupling.git", rev = "926830353b416e7314b668501ac2a0a39b23f093" }
+# Temporary: pointing at a local branch
+iam-pypsa-coupling = { path = "../IAM-PyPSA-coupling", editable = true }
 httpx = ">=0.27"   # used by iampypsa.io.ssp live SSP fetch
 pyam-iamc = ">=3.3.0, <4"
