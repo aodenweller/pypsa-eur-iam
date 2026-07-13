@@ -20,9 +20,18 @@ SPDX-License-Identifier: CC-BY-4.0
 This fork tracks upstream PyPSA-Eur releases.
 
 - **IAM coupling interface:** scripts and rules to exchange data with IAMs such as REMIND, using the [IAM-PyPSA-coupling](https://github.com/pik-piam/iam-pypsa-coupling) package
-- **Simplified sector coupling:** The coupling currently uses a simplified structure of buses and links to represent sector coupling based on electricity demand profiles for different sectors. Details will be added.
+- **Simplified sector coupling:** REMIND's sectoral electricity demand (`electrolysis`, `EV_pass`, `EV_freight`, `heatpump`, `resistive`) is attached to the network as simplified per-sector bus/link/load structures — an electricity-consuming link per sector feeding a load sized from REMIND's demand, rather than the full technology detail of upstream PyPSA-Eur's own sector-coupling model. See the [Sector Coupling](https://pik-piam.github.io/IAM-PyPSA-coupling/getting-started/sector-coupling/) page of the IAM-PyPSA-coupling docs.
 
 Changes are kept as minimal and non-invasive as possible to simplify syncing with future upstream releases.
+
+## Workflow
+
+The diagram below is the Snakemake job graph (`--dag`) for solving one REMIND-coupled network. Rules defined in `rules/REMIND_coupling.smk` — where REMIND's output file (`REMIND2PyPSAEUR.gdx` or a `.mif`) enters the workflow and is turned into demand, capacities, CO2 prices and costs — are highlighted in orange; everything else in grey is the standard PyPSA-Eur data-retrieval and network-building pipeline that these rules feed into via `add_electricity_sector_REMIND`.
+
+![Snakemake DAG for the REMIND-coupled workflow](doc/img/dag_remind_2050.png)
+
+<sub>Regenerate with (note: the target must come before `--configfile` on the command line; substitute a scenario/iteration for which the REMIND input file already exists under `resources/`):
+`snakemake -s Snakefile_REMIND "results/SCENARIO/iITER/yYEAR/networks/base_s_4_elec_.nc" --configfile config/config.remind_de.yaml --dag > doc/img/dag.dot && python doc/highlight_remind_dag.py doc/img/dag.dot doc/img/dag_remind_2050.png`</sub>
 
 ## Syncing with upstream
 
@@ -30,9 +39,9 @@ This fork is periodically synced with upstream PyPSA-Eur releases, currently `v2
 
 ## Getting started
 
-See the [upstream PyPSA-Eur documentation](https://pypsa-eur.readthedocs.io) for general usage. IAM-specific functionality will be documented in the [IAM-PyPSA-coupling](https://github.com/pik-piam/iam-pypsa-coupling) package in the future.
+See the [upstream PyPSA-Eur documentation](https://pypsa-eur.readthedocs.io) for general PyPSA-Eur usage. For IAM-specific functionality — what data is exchanged, how the coupling package works, technology mapping, downscaling, capacity harmonisation, sector coupling — see the [IAM-PyPSA-coupling Getting Started guide](https://pik-piam.github.io/IAM-PyPSA-coupling/getting-started/).
 
-For now, see the following key files:
+For this repo specifically, see the following key files:
 
 - `Snakefile_REMIND`: Main snakemake file for the coupling with IAMs, currently configured for REMIND.
   - Includes new wildcards for `iter_REMIND` (only used for bidirectional coupling) and `year_REMIND` for REMIND timesteps 
