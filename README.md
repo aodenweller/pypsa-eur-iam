@@ -4,9 +4,7 @@ SPDX-FileCopyrightText: Potsdam Institute for Climate Impact Research (PIK)
 SPDX-License-Identifier: CC-BY-4.0
 -->
 
-![Upstream](https://img.shields.io/badge/upstream-pypsa--eur_v2026.02.0-blue)
-[![Zenodo PyPSA-Eur](https://zenodo.org/badge/DOI/10.5281/zenodo.3520874.svg)](https://doi.org/10.5281/zenodo.3520874)
-[![Zenodo PyPSA-Eur-Sec](https://zenodo.org/badge/DOI/10.5281/zenodo.3938042.svg)](https://doi.org/10.5281/zenodo.3938042)
+[![Upstream](https://img.shields.io/badge/upstream-pypsa--eur_v2026.02.0-blue)](https://github.com/PyPSA/pypsa-eur/releases/tag/v2026.02.0)
 [![Snakemake](https://img.shields.io/badge/snakemake-≥9-brightgreen.svg?style=flat)](https://snakemake.readthedocs.io)
 
 
@@ -37,10 +35,22 @@ See the [upstream PyPSA-Eur documentation](https://pypsa-eur.readthedocs.io) for
 For now, see the following key files:
 
 - `Snakefile_REMIND`: Main snakemake file for the coupling with IAMs, currently configured for REMIND.
-- `REMIND_coupling.smk`: Contains all new rules.
+  - Includes new wildcards for `iter_REMIND` (only used for bidirectional coupling) and `year_REMIND` for REMIND timesteps 
+- `REMIND_coupling.smk`: Contains all new rules required for the coupling, in particular:
+  - `import_REMIND_demand`: Importing electricity demand from REMIND
+  - `downscale_REMIND_demand`: Downscaling electricity demand from REMIND regions to country level
+  - `import_REMIND_capacities`: Importing power plant capacities from REMIND (optionally enforced per region in `installed_capacity_constraints_REMIND.py`)
+  - `import_REMIND_co2price`: Importing CO2 price pathway from REMIND per region
+  - `import_REMIND_costs`: Importing all required techno-economic parameters from REMIND. Note that costs are different across REMIND regions (PyPSA-Eur default is uniform costs across Europe)
+  - `import_REMIND_hydro`: Special case for importing hydropower from REMIND. Current implementation adjusts PyPSA-Eur's inflow time series to match REMIND's capacity factor.
+  - `adjust_powerplants_REMIND`: Adjusting PyPSA-Eur's power plant matching database to be consistent with REMIND's capacities. See file for further information.
+  - `add_electricity_sector_REMIND`: Main file that builds the full network. Based on `add_electricity`, but includes additional sectoral demand profiles.
+  - `prepare_network_REMIND`: Same as `prepare_network` with additional wildcards.
+  - `solve_network_REMIND`: Same as `solve_network` with additional wildcards and using an optional SSH tunnel for Gurobi license verification if run on PIK HPC.
+  - `export_to_REMIND`: Currently not in use!
 - `config/config.remind.yaml`: Config file for REMIND coupling
+- `config/technology_mapping_REMIND.yaml`: Per-technology parameter mapping file (IAM/PyPSA/fixed) for costs and capacities from canonical technology output of IAM-PyPSA-coupling package.
 - `config/regionmapping_21_EU11.csv`: Region mapping file from REMIND to ISO.
-- `config/technology_cost_mapping.csv`: File to map all costs from REMIND output, with a few PyPSA fallbacks.
 - `scripts/remind`: All scripts for the new rules.
 
 # Licence

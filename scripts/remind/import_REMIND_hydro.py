@@ -1,12 +1,11 @@
 """
 Read REMIND hydro capacity and generation targets and export them for use in PyPSA-Eur.
 
-Reads ``hydro_capacity`` and ``hydro_generation`` from the REMIND output (GDX or IAMC .mif,
-auto-detected) via the central symbol config — GDX: ``p32_hydroCapacity`` (TW) /
-``p32_hydroGeneration`` (TWa); IAMC: ``Cap|Electricity|Hydro`` (GW) / ``SE|Electricity|Hydro``
-(EJ/yr). Both are converted to MW / MWh-per-year by ``load_frame``. Merges them, derives a
-capacity factor, and filters to REMIND regions that overlap with the configured PyPSA-Eur
-countries.
+Hydro capacity is taken from the general ``capacity`` symbol filtered to the hydro technology
+(GDX: ``vm_cap``; IAMC: ``Cap|Electricity|Hydro``) — there is no dedicated hydro-capacity symbol.
+Generation comes from ``hydro_generation`` (GDX: ``p32_prodSeHydro`` in TWa; IAMC:
+``SE|Electricity|Hydro`` in EJ/yr), converted to MWh-per-year by the symbol layer. Merges them,
+derives a capacity factor, and filters to REMIND regions overlapping the configured countries.
 """
 
 import logging
@@ -16,9 +15,9 @@ from _helpers import (
     configure_logging,
     mock_snakemake,
 )
+from iampypsa.couplers.remind import read_region_map as get_region_mapping
 from iampypsa.io import RemindLoader
-from iampypsa.io.remind_symbols import load_frame, load_symbol_specs
-from iampypsa.transforms.mapping import read_region_map as get_region_mapping
+from iampypsa.io.remind_symbols import load_frame, load_spec, load_symbol_specs
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +40,10 @@ if __name__ == "__main__":
     loader = RemindLoader(snakemake.input["remind_data"])
     symbols = load_symbol_specs(backend=loader.backend)
 
-    hydro_capacity = load_frame(loader, symbols["hydro_capacity"])  # TW -> MW
+    # Hydro capacity: the `capacity` symbol (vm_cap / Cap|Electricity|Hydro), filtered to hydro.
+    # The defensive groupby below sums out any extra dims (e.g. GDX vm_cap's `rlf` grades).
+    capacity = load_spec(loader, symbols["capacity"])
+    hydro_capacity = capacity[capacity["technology"] == "hydro"]
     hydro_generation = load_frame(
         loader, symbols["hydro_generation"]
     )  # TWa -> MWh/year
@@ -62,9 +64,7 @@ if __name__ == "__main__":
         .rename(columns={"value": "hydro_generation_mwh"})
     )
 
-    region_mapping = get_region_mapping(
-        snakemake.input["region_mapping"], source="country", target="model_region"
-    )
+    region_mapping = get_region_mapping(source="country", target="model_region")
     mapped_regions = (
         pd.Series(region_mapping, name="region").explode().dropna().unique()
     )

@@ -885,46 +885,38 @@ def get_technology_mapping(
     group_technologies: bool = False,
 ) -> pd.DataFrame:
     """
-    Get a 1:1 mapping between PyPSA-Eur and REMIND-EU technologies.
+    Return a 1:1 mapping between PyPSA-Eur carriers and REMIND technologies with a capacity target.
 
-    Reads technology_cost_mapping.csv, filtered to investment rows that are
-    directly mapped to a REMIND-EU technology. Each PyPSA-Eur carrier maps to
-    exactly one REMIND-EU technology.
-
-    ror is added automatically as a copy of hydro, because both carriers are
-    covered by REMIND's single "hydro" capacity target.
+    Filters technologies (from technology_mapping_REMIND.yaml) to those whose ``iam_name``
+    is in ``iampypsa.io.build_capacity_reporting_technologies()`` — capacity and cost sourcing
+    don't always coincide (e.g. csp/geothermal report capacity but not investment cost).
 
     Parameters
     ----------
     fn : str or Path
-        Path to the technology cost mapping file.
+        Path to the technology mapping YAML (model overlay).
     group_technologies : bool, optional
-        Deprecated; kept for backward compatibility. When True, a
-        "technology_group" column is added that equals the "REMIND-EU" column
-        (1:1 mapping means each carrier's group is its REMIND tech name).
+        Deprecated; kept for backward compatibility. When True, adds a "technology_group"
+        column equal to "REMIND-EU".
 
     Returns
     -------
     pd.DataFrame
-        DataFrame with columns "PyPSA-Eur" and "REMIND-EU" (and optionally
-        "technology_group" if group_technologies is True).
+        Columns "PyPSA-Eur" and "REMIND-EU" (and "technology_group" if group_technologies
+        is True).
     """
-    mapping = pd.read_csv(fn)
-    mapping = mapping.query("parameter == 'investment'")
-    mapping = mapping.query(
-        "`source` == 'REMIND'"
-    )
-    mapping = mapping[["PyPSA-Eur technology", "reference"]].rename(
-        columns={"PyPSA-Eur technology": "PyPSA-Eur", "reference": "REMIND-EU"}
-    )
+    from iampypsa.io import build_capacity_reporting_technologies, load_technology_parameters
+    from iampypsa.io.technology_mapping import iam_name
 
-    # ror shares REMIND's "hydro" capacity target alongside "hydro"
-    if "hydro" in mapping["PyPSA-Eur"].values and "ror" not in mapping["PyPSA-Eur"].values:
-        ror_row = mapping.loc[mapping["PyPSA-Eur"] == "hydro"].copy()
-        ror_row["PyPSA-Eur"] = "ror"
-        mapping = pd.concat([mapping, ror_row]).reset_index(drop=True)
+    technologies = load_technology_parameters(fn)["technologies"]
+    reports_capacity = build_capacity_reporting_technologies()
+    rows = [
+        {"PyPSA-Eur": tech, "REMIND-EU": iam_name(tech, spec)}
+        for tech, spec in technologies.items()
+        if iam_name(tech, spec) in reports_capacity
+    ]
 
-    mapping = mapping.drop_duplicates().reset_index(drop=True)
+    mapping = pd.DataFrame(rows, columns=["PyPSA-Eur", "REMIND-EU"]).drop_duplicates().reset_index(drop=True)
 
     if group_technologies:
         mapping["technology_group"] = mapping["REMIND-EU"]

@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 import pypsa
 import xarray as xr
-from iampypsa.transforms.mapping import read_region_map as get_region_mapping
+from iampypsa.couplers.remind import read_region_map as get_region_mapping
 
 from scripts.add_electricity import (
     add_co2_emissions,
@@ -140,9 +140,9 @@ def _to_scalar_region(value):
     return value
 
 
-def _get_country_to_region(region_mapping_fn: str) -> pd.Series:
+def _get_country_to_region() -> pd.Series:
     """Return a Series mapping PyPSA-EUR country codes to scalar REMIND-EU region labels."""
-    mapping = get_region_mapping(region_mapping_fn, source="country", target="model_region")
+    mapping = get_region_mapping(source="country", target="model_region")
     return pd.Series(mapping).map(_to_scalar_region)
 
 
@@ -161,7 +161,6 @@ def _optional_input_path(value: Any) -> str | None:
 def _fleet_evs_by_node_from_rds(
     n: pypsa.Network,
     fleet_file: str,
-    region_mapping_fn: str,
     number_cars: pd.Series,
     year: int,
     kind: str,
@@ -200,7 +199,7 @@ def _fleet_evs_by_node_from_rds(
     if rows.empty:
         return None
 
-    country_to_region = _get_country_to_region(region_mapping_fn)
+    country_to_region = _get_country_to_region()
     node_country = n.buses["country"].reindex(number_cars.index)
     node_region = node_country.map(country_to_region)
 
@@ -294,7 +293,6 @@ def attach_ev_demand_remind(
     dsm_profile_fn: str,
     temp_air_total_fn: str,
     fleet_file: str | list,
-    region_mapping_fn: str,
     year: int,
     kind: str,
 ) -> None:
@@ -364,7 +362,6 @@ def attach_ev_demand_remind(
         number_evs = _fleet_evs_by_node_from_rds(
             n,
             fleet_file_path,
-            region_mapping_fn,
             number_cars,
             year,
             kind,
@@ -598,7 +595,6 @@ def attach_hydro_remind(
     hydro_capacities: str,
     carriers: list,
     hydro_targets_fn: str,
-    region_mapping_fn: str,
     year: int,
     **params,
 ) -> None:
@@ -635,7 +631,7 @@ def attach_hydro_remind(
     hydro_assets = pd.concat([ror, hydro], axis=0)
     hydro_assets["country"] = hydro_assets["bus"].map(n.buses.country)
 
-    region_mapping = get_region_mapping(region_mapping_fn, source="country", target="model_region")
+    region_mapping = get_region_mapping(source="country", target="model_region")
     country_to_region = pd.Series(region_mapping).map(_to_scalar_region)
     hydro_assets["region"] = hydro_assets["country"].map(country_to_region)
 
@@ -1021,7 +1017,7 @@ if __name__ == "__main__":
         .to_dict()
     )
 
-    country_to_region = _get_country_to_region(snakemake.input.region_mapping)
+    country_to_region = _get_country_to_region()
 
     ppl = load_and_aggregate_powerplants(
         snakemake.input.powerplants,
@@ -1030,11 +1026,6 @@ if __name__ == "__main__":
         params.aggregation_strategies,
         params.exclude_carriers,
     )
-
-    # load_and_aggregate_powerplants's carrier_dict maps "ccgt"→"CCGT" and "ocgt"→"OCGT"
-    # (uppercase). Fueltype values for all other REMIND carriers are pre-set in
-    # adjust_powerplants_REMIND.py and pass through to_pypsa_names() as-is (lowercase).
-    ppl["carrier"] = ppl["carrier"].replace({"CCGT": "ccgt", "OCGT": "ocgt"})
 
     # Overwrite plant-specific efficiencies with REMIND efficiencies
     ppl = overwrite_ppl_efficiency_with_costs(ppl, costs)
@@ -1079,10 +1070,8 @@ if __name__ == "__main__":
     else:
         fuel_price = None
 
-    # add_electricity.py's add_co2_emissions() splits carrier names on "-" to get the
-    # suptech prefix (e.g. "coal-PC" → "coal") and looks that up in the costs index.
-    # REMIND cost entries use full carrier names, so we add alias rows for each
-    # suptech prefix that is missing from the index.
+    # add_co2_emissions() (called inside attach_conventional_generators) hard-looks-up each
+    # carrier's "-" prefix; add throwaway alias rows to avoid KeyError (overwritten below).
     costs_for_attach = costs.copy()
     for carrier in list(costs.index):
         suptech = carrier.split("-")[0]
@@ -1123,7 +1112,6 @@ if __name__ == "__main__":
             snakemake.input.hydro_capacities,
             carriers,
             snakemake.input.hydro_targets,
-            snakemake.input.region_mapping,
             year,
             **p,
         )
@@ -1195,7 +1183,6 @@ if __name__ == "__main__":
             snakemake.input.dsm_profile,
             snakemake.input.temp_air_total,
             snakemake.input.fleet_file,
-            snakemake.input.region_mapping,
             year,
             kind="pass",
         )
@@ -1212,7 +1199,6 @@ if __name__ == "__main__":
             snakemake.input.dsm_profile,
             snakemake.input.temp_air_total,
             snakemake.input.fleet_file,
-            snakemake.input.region_mapping,
             year,
             kind="freight",
         )
@@ -1263,10 +1249,8 @@ if __name__ == "__main__":
             sorted(df.rename(columns=rename_map).columns), axis=1
         )
 
-    # add_co2_emissions() in add_electricity.py uses only the suptech prefix (first
-    # part before "-") to look up CO2 intensity, so all biomass carriers would
-    # inherit biomass-chp's value of 0.  Override with the full-name lookup so
-    # that biomass-igcc-ccs (negative CO2 intensity from BECCS) is set correctly.
+    # Overwrite with full-name CO2 intensity (the suptech-prefix pass above conflates e.g.
+    # biomass-chp and biomass-igcc-ccs, whose BECCS makes it carbon-negative).
     for carrier in costs.index:
         if carrier in n.carriers.index and not pd.isna(costs.at[carrier, "CO2 intensity"]):
             n.carriers.at[carrier, "co2_emissions"] = costs.at[carrier, "CO2 intensity"]

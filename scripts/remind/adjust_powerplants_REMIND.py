@@ -1,65 +1,61 @@
 """
 Align the powerplantmatching database with REMIND capacity targets before the network build.
 
-Assigns a REMIND-compatible carrier name to each plant using the technology mapping CSV,
-filters out plants not yet built or already decommissioned in the target year, computes
-per-(REMIND region, carrier) scaling factors to reduce aggregate PyPSA-Eur capacity to
-the REMIND target wherever PyPSA-Eur exceeds it, and overwrites each plant's Fueltype
-with the carrier name so that downstream scripts receive consistent carrier labels.
+Assigns a REMIND-compatible carrier name to each plant using the technology mapping (see
+rules/REMIND_coupling.smk's ``_POWERPLANT_MATCHING``), filters out plants not yet built or
+already decommissioned in the target year, computes per-(REMIND region, carrier) scaling
+factors to reduce aggregate PyPSA-Eur capacity to the REMIND target wherever PyPSA-Eur
+exceeds it, and overwrites each plant's Fueltype with the carrier name so that downstream
+scripts receive consistent carrier labels.
 """
 
 import logging
 
 import pandas as pd
 from _helpers import configure_logging, mock_snakemake
-from iampypsa.transforms.mapping import read_region_map as get_region_mapping
+from iampypsa.couplers.remind import read_region_map as get_region_mapping
 
 logger = logging.getLogger(__name__)
 
 
-def assign_carriers_from_mapping(ppl: pd.DataFrame, fp_mapping: str) -> pd.Series:
+def assign_carriers_from_mapping(ppl: pd.DataFrame, mapping: dict) -> pd.Series:
     """
-    Assign a carrier name to each powerplant row using ppm_ columns in the mapping CSV.
+    Assign a carrier name to each powerplant row using the technology mapping.
 
     Matching is applied in specificity order so that more-specific rules take
     precedence over broader ones:
       1. (fueltype + set)        e.g. Natural Gas + CHP  → gas-chp
-      2. (fueltype + technology) e.g. Natural Gas + CCGT → ccgt
-      3. (fueltype only)         e.g. Hard Coal;Lignite  → coal-pc
+      2. (fueltype + technology) e.g. Natural Gas + CCGT → gas-ccgt
+      3. (fueltype only)         e.g. Hard Coal, Lignite → coal-pulverised
 
     Unmatched plants get NaN.
     """
-    df = pd.read_csv(fp_mapping)
-    unique = (
-        df[["PyPSA-Eur technology", "ppm_fueltype", "ppm_technology", "ppm_set"]]
-        .drop_duplicates()
-        .fillna("")
-    )
-    # Only keep rows that have at least one ppm column filled.
-    has_ppm = unique[unique[["ppm_fueltype", "ppm_technology", "ppm_set"]].ne("").any(axis=1)]
-
     carrier = pd.Series(index=ppl.index, dtype=object)
 
     # 1. Fueltype + Set rules (e.g. gas-chp)
-    fs_rows = has_ppm[has_ppm["ppm_fueltype"].ne("") & has_ppm["ppm_set"].ne("") & has_ppm["ppm_technology"].eq("")]
-    for _, row in fs_rows.iterrows():
-        fueltypes = [ft.strip() for ft in row["ppm_fueltype"].split(";")]
-        mask = ppl["Fueltype"].isin(fueltypes) & (ppl["Set"] == row["ppm_set"]) & carrier.isna()
-        carrier[mask] = row["PyPSA-Eur technology"]
+    for name, rule in mapping.items():
+        if "set" not in rule:
+            continue
+        mask = ppl["Fueltype"].isin(rule["fueltype"]) & (ppl["Set"] == rule["set"]) & carrier.isna()
+        carrier[mask] = name
 
-    # 2. Fueltype + Technology rules (e.g. ccgt, ocgt)
-    ft_rows = has_ppm[has_ppm["ppm_fueltype"].ne("") & has_ppm["ppm_technology"].ne("") & has_ppm["ppm_set"].eq("")]
-    for _, row in ft_rows.iterrows():
-        fueltypes = [ft.strip() for ft in row["ppm_fueltype"].split(";")]
-        mask = ppl["Fueltype"].isin(fueltypes) & (ppl["Technology"] == row["ppm_technology"]) & carrier.isna()
-        carrier[mask] = row["PyPSA-Eur technology"]
+    # 2. Fueltype + Technology rules (e.g. gas-ccgt, gas-ocgt)
+    for name, rule in mapping.items():
+        if "technology" not in rule:
+            continue
+        mask = (
+            ppl["Fueltype"].isin(rule["fueltype"])
+            & (ppl["Technology"] == rule["technology"])
+            & carrier.isna()
+        )
+        carrier[mask] = name
 
-    # 3. Fueltype-only rules (e.g. coal-pc, nuclear, oil)
-    f_rows = has_ppm[has_ppm["ppm_fueltype"].ne("") & has_ppm["ppm_technology"].eq("") & has_ppm["ppm_set"].eq("")]
-    for _, row in f_rows.iterrows():
-        fueltypes = [ft.strip() for ft in row["ppm_fueltype"].split(";")]
-        mask = ppl["Fueltype"].isin(fueltypes) & carrier.isna()
-        carrier[mask] = row["PyPSA-Eur technology"]
+    # 3. Fueltype-only rules (e.g. coal-pulverised, nuclear, oil)
+    for name, rule in mapping.items():
+        if "set" in rule or "technology" in rule:
+            continue
+        mask = ppl["Fueltype"].isin(rule["fueltype"]) & carrier.isna()
+        carrier[mask] = name
 
     return carrier
 
@@ -78,11 +74,11 @@ def build_scaling_factors(
     capacities: pd.DataFrame,
     region_mapping: dict,
     year: int,
-    fp_mapping: str,
+    mapping: dict,
 ) -> pd.DataFrame:
     """Compute per-(region, carrier) scaling factors to reduce PyPSA capacity to REMIND targets where needed."""
     ppl = ppl.copy()
-    ppl["carrier"] = assign_carriers_from_mapping(ppl, fp_mapping)
+    ppl["carrier"] = assign_carriers_from_mapping(ppl, mapping)
     ppl["region_REMIND"] = ppl["Country"].map(region_mapping)
 
     ppl_grouped = (
@@ -112,10 +108,10 @@ def build_scaling_factors(
     return compare[["region_REMIND", "carrier", "capacity_pypsa", "capacity_remind", "scaling_factor"]]
 
 
-def apply_scaling(ppl: pd.DataFrame, scaling: pd.DataFrame, region_mapping: dict, fp_mapping: str) -> pd.DataFrame:
+def apply_scaling(ppl: pd.DataFrame, scaling: pd.DataFrame, region_mapping: dict, mapping: dict) -> pd.DataFrame:
     """Scale plant capacities by the computed factors and overwrite Fueltype with the REMIND carrier name."""
     out = ppl.copy()
-    out["carrier"] = assign_carriers_from_mapping(out, fp_mapping)
+    out["carrier"] = assign_carriers_from_mapping(out, mapping)
     out["region_REMIND"] = out["Country"].map(region_mapping)
 
     out = out.merge(
@@ -151,17 +147,15 @@ if __name__ == "__main__":
     year = int(snakemake.wildcards["year_REMIND"])
     ppl = pd.read_csv(snakemake.input["powerplants"], index_col=0)
     capacities = pd.read_csv(snakemake.input["capacities"])
-    fp_mapping = snakemake.input["technology_mapping"]
+    mapping = snakemake.params["technology_mapping"]
 
-    region_mapping = get_region_mapping(
-        snakemake.input["region_mapping"], source="country", target="model_region", flatten=True
-    )
+    region_mapping = get_region_mapping(source="country", target="model_region", flatten=True)
 
     ppl = ppl.loc[ppl["Country"].isin(snakemake.params["countries"])].copy()
     ppl = filter_decommissioned_powerplants(ppl, year)
 
-    scaling = build_scaling_factors(ppl, capacities, region_mapping, year, fp_mapping)
-    ppl_adjusted = apply_scaling(ppl, scaling, region_mapping, fp_mapping)
+    scaling = build_scaling_factors(ppl, capacities, region_mapping, year, mapping)
+    ppl_adjusted = apply_scaling(ppl, scaling, region_mapping, mapping)
 
     reductions = scaling.loc[scaling["scaling_factor"] < 1].copy()
     if reductions.empty:

@@ -17,6 +17,19 @@ _REMIND_INPUT_FILENAME = (
     else "REMIND2PyPSAEUR.gdx"
 )
 
+# Match existing plants (powerplantmatching Fueltype/Technology/Set) to coupling carriers.
+_POWERPLANT_MATCHING = {
+    "gas-chp":         {"fueltype": ["Natural Gas"], "set": "CHP"},
+    "coal-chp":        {"fueltype": ["Hard Coal", "Lignite"], "set": "CHP"},
+    "gas-ccgt":        {"fueltype": ["Natural Gas"], "technology": "CCGT"},
+    "gas-ocgt":        {"fueltype": ["Natural Gas"], "technology": "OCGT"},
+    "coal-pulverised": {"fueltype": ["Hard Coal", "Lignite"]},
+    "nuclear":         {"fueltype": ["Nuclear"]},
+    "oil":             {"fueltype": ["Oil"]},
+    "biomass-chp":     {"fueltype": ["Bioenergy"]},
+}
+
+# Retrieve SSP data for downscaling demand
 rule retrieve_ssp_data:
     params:
         ssp_scenario=config_provider("remind_coupling", "demand_downscaling", "ssp_scenario"),
@@ -34,13 +47,10 @@ rule retrieve_ssp_data:
 
 
 # Download and prepare all files that are independent of REMIND inputs.
-# retrieve_ssp_data is a localrule (needs internet); all other retrieve_* rules
-# use the storage plugin and are downloaded by Snakemake's main process automatically.
 # Configure Gurobi before running:
 #   export GRB_LICENSE_FILE=/p/projects/rd3mod/gurobi.lic
 #   snakemake -s Snakefile_REMIND --c4 download_and_prepare_REMIND --omit-from add_electricity
 # Optionally also add --profile pik_hpc_profile to run on PIK HPC
-# The --omit from flag makes sure that add_electricity itself isn't called
 rule download_and_prepare_REMIND:
     input:
         # All input files required for add_electricity
@@ -71,6 +81,7 @@ rule download_and_prepare_REMIND:
                clusters=config["scenario"]["clusters"]),
 
 # Before calling PyPSA-Eur the config file is created by import_REMIND_config.py
+# TODO: Currently not in use, to be reactivated when coupling bi-directionally
 #
 #   python scripts/remind/import_REMIND_config.py \
 #       --gdx resources/{scen}/i{iter}/REMIND2PyPSAEUR.gdx \
@@ -89,7 +100,6 @@ rule import_REMIND_demand:
         countries=config_provider("countries"),
     input:
         remind_data=ITERATION_RESOURCES + _REMIND_INPUT_FILENAME,
-        region_mapping="config/regionmapping_21_EU11.csv",
     output:
         sectoral_load=ITERATION_RESOURCES + "sectoral_load.csv",
     log:
@@ -102,17 +112,23 @@ rule import_REMIND_demand:
         scripts("remind/import_REMIND_demand.py")
 
 
-# Input 1b: Disaggregate REMIND regional demand to country level using SSP population and GDP weights.
+# Input 1b: Disaggregate REMIND regional demand to country level using SSP population/GDP shares
+# (most sectors) and HDD/CDD-weighted degree-day shares (heatpump/resistive).
 rule downscale_REMIND_demand:
     params:
         sector_weights=config_provider("remind_coupling", "demand_downscaling", "sector_weights"),
         countries=config_provider("countries"),
         years=config_provider("remind_coupling", "years"),
+        degree_days=config_provider("remind_coupling", "demand_downscaling", "degree_days"),
     input:
         sectoral_load=ITERATION_RESOURCES + "sectoral_load.csv",
         population="data/ssp/population.csv",
         gdp="data/ssp/gdp.csv",
-        region_mapping="config/regionmapping_21_EU11.csv",
+        # Single-year (2060, SSP2) placeholder test data, not yet a retrieved dataset
+        # (no retrieve_* rule exists for it, unlike retrieve_ssp_data for population/gdp).
+        # TODO: Update with full data
+        hdd="data/climbed_test/climbed_hdd_2060_ssp2.csv",
+        cdd="data/climbed_test/climbed_cdd_2060_ssp2.csv",
         remind_data=ITERATION_RESOURCES + _REMIND_INPUT_FILENAME,
     output:
         sectoral_load_country=ITERATION_RESOURCES + "sectoral_load_country.csv",
@@ -133,8 +149,7 @@ rule import_REMIND_capacities:
         countries=config_provider("countries"),
     input:
         remind_data=ITERATION_RESOURCES + _REMIND_INPUT_FILENAME,
-        region_mapping="config/regionmapping_21_EU11.csv",
-        technology_cost_mapping="config/technology_cost_mapping.csv",
+        technology_mapping="config/technology_mapping_REMIND.yaml",
     output:
         capacities=ITERATION_RESOURCES + "installed_capacities.csv",
     log:
@@ -150,7 +165,6 @@ rule import_REMIND_capacities:
 rule import_REMIND_co2price:
     input:
         remind_data=ITERATION_RESOURCES + _REMIND_INPUT_FILENAME,
-        region_mapping="config/regionmapping_21_EU11.csv",
     output:
         co2_price=ITERATION_RESOURCES + "co2_price.csv",
     log:
@@ -172,8 +186,7 @@ rule import_REMIND_costs:
         original_costs=lambda w: COSTS_DATASET["folder"] + f"/costs_{max(2020, min(int(w['year_REMIND']), 2050))}.csv",
         network=resources("networks/base_s.nc"),
         custom_costs=config_provider("costs", "custom_cost_fn"),
-        region_mapping="config/regionmapping_21_EU11.csv",
-        technology_cost_mapping="config/technology_cost_mapping.csv",
+        technology_mapping="config/technology_mapping_REMIND.yaml",
         remind_data=ITERATION_RESOURCES + _REMIND_INPUT_FILENAME,
     output:
         costs_processed=ITERATION_RESOURCES + "y{year_REMIND}/costs_processed.csv",
@@ -193,7 +206,6 @@ rule import_REMIND_costs:
 rule import_REMIND_hydro:
     input:
         remind_data=ITERATION_RESOURCES + _REMIND_INPUT_FILENAME,
-        region_mapping="config/regionmapping_21_EU11.csv",
     output:
         hydro_targets=ITERATION_RESOURCES + "hydro_targets.csv",
     log:
@@ -209,11 +221,10 @@ rule import_REMIND_hydro:
 rule adjust_powerplants_REMIND:
     params:
         countries=config_provider("countries"),
+        technology_mapping=_POWERPLANT_MATCHING,
     input:
         powerplants=resources("powerplants_s_{clusters}.csv"),
         capacities=ITERATION_RESOURCES + "installed_capacities.csv",
-        region_mapping="config/regionmapping_21_EU11.csv",
-        technology_mapping="config/technology_cost_mapping.csv",
     output:
         powerplants_adjusted=SCENARIO_RESOURCES + "i{iter_REMIND}/y{year_REMIND}/powerplants_adjusted_s_{clusters}.csv",
     log:
@@ -259,7 +270,6 @@ def _get_fleet_input(wildcards):
 
 # This is the main rule that brings all REMIND inputs together and creates the electricity network for the given scenario, iteration and year.
 # TODO: Revert to default add_electricity and use this rule to overwrite afterwards?
-# TODO: Make this call carrier_to_remind.yaml to name network components
 rule add_electricity_sector_REMIND:
     message:
         "Adding electricity and sector coupling to REMIND-coupled network"
@@ -318,8 +328,6 @@ rule add_electricity_sector_REMIND:
         cop_profiles=resources("cop_profiles_base_s_{clusters}_2030.nc"),  # Use arbitrary planning_horizons wildcard
         hourly_water_heat_demand_total=resources("hourly_water_heat_demand_total_base_s_{clusters}.nc"),  # From new rule above
         # REMIND input files
-        region_mapping="config/regionmapping_21_EU11.csv",
-        technology_cost_mapping="config/technology_cost_mapping.csv",
         sectoral_load_country=ITERATION_RESOURCES + "sectoral_load_country.csv",
         hydro_targets=ITERATION_RESOURCES + "hydro_targets.csv",
         capacities=ITERATION_RESOURCES + "installed_capacities.csv",
@@ -408,8 +416,7 @@ rule solve_network_REMIND:
         network=ITERATION_RESOURCES + "y{year_REMIND}/networks/base_s_{clusters}_elec_{opts}.nc",
         # REMIND input files for capacity constraint
         capacities=ITERATION_RESOURCES + "installed_capacities.csv",
-        region_mapping="config/regionmapping_21_EU11.csv",
-        technology_cost_mapping="config/technology_cost_mapping.csv",
+        technology_mapping="config/technology_mapping_REMIND.yaml",
     output:
         network=ITERATION_RESULTS + "y{year_REMIND}/networks/base_s_{clusters}_elec_{opts}.nc",
         config=ITERATION_RESULTS + "y{year_REMIND}/configs/config.base_s_{clusters}_elec_{opts}.yaml",
@@ -456,14 +463,13 @@ rule solve_all_networks_REMIND:
 
 
 # Export PyPSA-Eur results to REMIND as GDX and create additional reporting CSVs
+# TODO: Currently not functional and not used, to be reactivated when coupling bi-directionally
 rule export_to_REMIND:
     params:
         remind_settings=config_provider("remind_coupling"),
     input:
         networks=rules.solve_all_networks_REMIND.input["networks"],
-        region_mapping="config/regionmapping_21_EU11.csv",
-        technology_cost_mapping="config/technology_cost_mapping.csv",
-        carrier_mapping="config/carrier_to_remind.yaml",
+        technology_mapping="config/technology_mapping_REMIND.yaml",
     output:
         # Main output file that is read by REMIND
         gdx=ITERATION_RESULTS + "PyPSAEUR2REMIND.gdx",

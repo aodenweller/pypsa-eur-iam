@@ -2,18 +2,21 @@
 Disaggregate REMIND regional demand to country-level demand.
 
 Stage 2 of the demand pipeline. Splits each (year, region, sector) row (Stage-1 output of
-``import_REMIND_demand``) across constituent countries using a sector-weighted blend of SSP
-population and GDP shares (single-country regions are a no-op). Sectors without configured
-weights are folded into ``AC`` first (see ``fold_unconfigured_sectors_into_ac``). Demand
-attributed to unconfigured countries is excluded (warned above 1% in the iampypsa function).
+``import_REMIND_demand``) across constituent countries using a sector-weighted blend of named
+proxies (single-country regions are a no-op): SSP population and GDP shares for most sectors,
+and an HDD-weighted ``heating_demand`` proxy (population × heating degree-days) for
+``heatpump``/``resistive``. Sectors without configured weights are folded into ``AC`` first (see
+``fold_unconfigured_sectors_into_ac``). Demand attributed to unconfigured countries is excluded
+(warned above 1% in the iampypsa function).
 """
 
 import logging
 
 import pandas as pd
 from _helpers import configure_logging, mock_snakemake
-from iampypsa.downscale.demand import disaggregate_demand_to_country
-from iampypsa.transforms.mapping import read_region_map as get_region_mapping
+from iampypsa.couplers.remind import read_region_map as get_region_mapping
+from iampypsa.downscale import build_demand_proxy_from_dd, disaggregate_demand_to_country
+from iampypsa.io import read_degree_days
 
 logger = logging.getLogger(__name__)
 
@@ -53,20 +56,33 @@ if __name__ == "__main__":
     sectoral_load = pd.read_csv(snakemake.input.sectoral_load)
     pop = pd.read_csv(snakemake.input.population).set_index(["iso2", "year"])
     gdp = pd.read_csv(snakemake.input.gdp).set_index(["iso2", "year"])
-    region_to_countries = get_region_mapping(
-        snakemake.input.region_mapping, source="model_region", target="country"
-    )
+    region_to_countries = get_region_mapping(source="model_region", target="country")
     configured_countries = set(snakemake.params.countries)
+
+    dd = snakemake.params.degree_days
+    hdd = read_degree_days(
+        snakemake.input.hdd, dd_type="HDD",
+        tlim_setpoint=dd["tlim_setpoint_hdd"], rcp=dd["rcp"], ssp=dd["ssp"],
+    ).set_index(["iso2", "year"])
+    cdd = read_degree_days(
+        snakemake.input.cdd, dd_type="CDD",
+        tlim_setpoint=dd["tlim_setpoint_cdd"], rcp=dd["rcp"], ssp=dd["ssp"],
+    ).set_index(["iso2", "year"])
+    proxies = {
+        "population": pop,
+        "gdp": gdp,
+        "heating_demand": build_demand_proxy_from_dd(hdd, pop),
+        "cooling_demand": build_demand_proxy_from_dd(cdd, pop),
+    }
 
     years = {int(y) for y in snakemake.params.years}
     logger.info(
-        "Disaggregating demand for %d scenario years via SSP population/GDP shares ...",
+        "Disaggregating demand for %d scenario years via SSP/HDD/CDD proxy shares ...",
         len(years),
     )
 
     loads = sectoral_load[sectoral_load["year"].isin(years)]
     loads = fold_unconfigured_sectors_into_ac(loads, snakemake.params.sector_weights)
-    proxies = {"population": pop, "gdp": gdp}
     result = disaggregate_demand_to_country(
         loads,
         region_to_countries,

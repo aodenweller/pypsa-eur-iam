@@ -18,10 +18,10 @@ from _helpers import (
     get_technology_mapping,
     mock_snakemake,
 )
+from iampypsa.couplers.remind import read_region_map as get_region_mapping
 from iampypsa.io import RemindLoader
 from iampypsa.io.remind_symbols import load_symbol_specs
 from iampypsa.transforms.capacities import build_capacity_targets
-from iampypsa.transforms.mapping import read_region_map as get_region_mapping
 
 logger = logging.getLogger(__name__)
 
@@ -39,11 +39,9 @@ if __name__ == "__main__":
     logger.info("Building REMIND capacity targets via iampypsa.build_capacity_targets")
 
     countries = set(snakemake.params["countries"])
-    region_mapping = get_region_mapping(
-        snakemake.input["region_mapping"], source="country", target="model_region"
-    )
+    region_mapping = get_region_mapping(source="country", target="model_region")
     mapped_regions = sorted({r for c, rs in region_mapping.items() if c in countries for r in rs if r})
-    tech_map = get_technology_mapping(snakemake.input["technology_cost_mapping"])
+    tech_map = get_technology_mapping(snakemake.input["technology_mapping"])
 
     loader = RemindLoader(snakemake.input["remind_data"])
     symbols = load_symbol_specs(backend=loader.backend)
