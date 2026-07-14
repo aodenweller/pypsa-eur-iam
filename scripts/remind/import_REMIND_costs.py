@@ -31,7 +31,7 @@ from iampypsa.transforms.costs import (
     add_discount_rate,
     build_pypsa_techdata,
     build_iam_techdata,
-    build_set_value_overrides,
+    build_fixed_value_overrides,
     convert_investment_to_input_capacity_basis,
     apply_overrides,
 )
@@ -89,13 +89,13 @@ if __name__ == "__main__":
     # REMIND-derived overrides keep their region dimension; non-regional overrides are
     # the same for every region (PyPSA-Eur baseline values and fixed-value entries).
     regional_mapped_overrides = build_iam_techdata(
-        technologies, remind_long, out_source="REMIND-EU",
+        technologies, remind_long, source="REMIND-EU",
     )
     non_regional_overrides = pd.concat(
         [
-            build_pypsa_techdata(technologies, baseline_raw, baseline_label="PyPSA-Eur"),
+            build_pypsa_techdata(technologies, baseline_raw, source="PyPSA-Eur"),
 
-            build_set_value_overrides(technologies, snakemake.input["technology_mapping"]),
+            build_fixed_value_overrides(technologies, source="technology_mapping.yaml"),
 
         ],
         ignore_index=True,
